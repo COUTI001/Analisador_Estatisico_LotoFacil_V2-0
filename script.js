@@ -576,9 +576,10 @@ function obterContadorGerações() {
 }
 
 /**
- * Incrementa o contador de gerações
+ * Incrementa o contador de gerações pela quantidade especificada
+ * @param {number} quantidade - Quantidade de jogos gerados (padrão: 1)
  */
-function incrementarContador() {
+function incrementarContador(quantidade = 1) {
     const agora = Date.now();
     const dados = obterContadorGerações();
 
@@ -587,11 +588,11 @@ function incrementarContador() {
 
     if (dados.timestamp === null || passou24Horas(dados.timestamp)) {
         // Primeira geração do dia ou passou 24 horas
-        novoContador = 1;
+        novoContador = quantidade;
         novoTimestamp = agora;
     } else {
-        // Incrementa contador existente
-        novoContador = dados.contador + 1;
+        // Incrementa contador existente pela quantidade
+        novoContador = dados.contador + quantidade;
         novoTimestamp = dados.timestamp;
     }
 
@@ -602,11 +603,12 @@ function incrementarContador() {
 }
 
 /**
- * Verifica se o usuário pode gerar jogos
+ * Verifica se o usuário pode gerar a quantidade especificada de jogos
+ * @param {number} quantidade - Quantidade de jogos a gerar (padrão: 1)
  */
-function podeGerar() {
+function podeGerar(quantidade = 1) {
     const dados = obterContadorGerações();
-    return dados.contador < MAX_GERACOES_POR_DIA;
+    return (dados.contador + quantidade) <= MAX_GERACOES_POR_DIA;
 }
 
 /**
@@ -692,13 +694,26 @@ function exibirErro(mensagem) {
 form.addEventListener('submit', (e) => {
     e.preventDefault();
     
-    // Verifica se pode gerar
-    if (!podeGerar()) {
+    // Obtém a quantidade de jogos a gerar ANTES de verificar o limite
+    const quantidadeJogos = parseInt(
+        document.getElementById('quantidadeJogos').value,
+        10
+    );
+    
+    // Verifica se pode gerar a quantidade solicitada
+    if (!podeGerar(quantidadeJogos)) {
+        const dados = obterContadorGerações();
+        const disponivel = MAX_GERACOES_POR_DIA - dados.contador;
         const tempoRestante = calcularTempoRestante();
-        if (tempoRestante) {
-            exibirErro(`Limite diário atingido! Você já gerou ${MAX_GERACOES_POR_DIA} jogos hoje. Tente novamente em ${tempoRestante.horas}h ${tempoRestante.minutos}min.`);
+        
+        if (dados.contador >= MAX_GERACOES_POR_DIA) {
+            if (tempoRestante) {
+                exibirErro(`Limite diário atingido! Você já gerou ${MAX_GERACOES_POR_DIA} jogos hoje. Tente novamente em ${tempoRestante.horas}h ${tempoRestante.minutos}min.`);
+            } else {
+                exibirErro(`Limite diário atingido! Você já gerou ${MAX_GERACOES_POR_DIA} jogos hoje.`);
+            }
         } else {
-            exibirErro(`Limite diário atingido! Você já gerou ${MAX_GERACOES_POR_DIA} jogos hoje.`);
+            exibirErro(`Você só pode gerar mais ${disponivel} jogo(s) hoje. Tente gerar ${disponivel} jogo(s) ou aguarde 24 horas.`);
         }
         return;
     }
@@ -722,12 +737,6 @@ form.addEventListener('submit', (e) => {
                     'Resultado do Jogo Atual'
                 );
                 
-                // Obtém a quantidade de jogos a gerar
-                const quantidadeJogos = parseInt(
-                    document.getElementById('quantidadeJogos').value,
-                    10
-                );
-                
                 // Obtém modo de geração
                 const modo = obterModoGeracao();
                 
@@ -742,8 +751,8 @@ form.addEventListener('submit', (e) => {
                     listaJogos.push(jogo);
                 }
                 
-                // Incrementa contador após gerar com sucesso
-                incrementarContador();
+                // Incrementa contador pela quantidade de jogos gerados
+                incrementarContador(quantidadeJogos);
                 
                 exibirJogos(listaJogos);
                 exibirEstatisticas(tresSorteios);
@@ -823,7 +832,9 @@ function inicializarSeletoresNumericos() {
 }
 
 /**
- * Atualiza contador de números em um campo
+ * Atualiza contador visual de números em um campo (ex: 0/15, 5/15, etc.)
+ * IMPORTANTE: Esta função NÃO afeta o contador de gerações diárias.
+ * Ela apenas atualiza a exibição visual de quantos números foram digitados no campo.
  */
 function atualizarContador(campoId) {
     const input = document.getElementById(campoId);
@@ -1087,13 +1098,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Botões de limpar campo
+    // IMPORTANTE: Esta função apenas limpa os valores dos campos do formulário.
+    // Ela NÃO afeta o contador de gerações (STORAGE_KEY_CONTADOR), que é mantido no localStorage
+    // e só é resetado após 24 horas ou quando o usuário clica em "Limpar Dados" no rodapé.
     document.querySelectorAll('.btn-limpar-campo').forEach(btn => {
         btn.addEventListener('click', () => {
             const campoId = btn.dataset.campo;
             const input = document.getElementById(campoId);
             if (input) {
                 input.value = '';
-                atualizarContador(campoId);
+                atualizarContador(campoId); // Atualiza apenas o contador visual do campo (ex: 0/15)
             }
         });
     });
