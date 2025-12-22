@@ -24,9 +24,15 @@ const STORAGE_KEY_NUMEROS_EXCLUIR = 'lotoFacil_numeros_excluir';
 const STORAGE_KEY_NUMEROS_INCLUIR = 'lotoFacil_numeros_incluir';
 const STORAGE_KEY_CODIGO_ATIVO = 'lotoFacil_codigo_ativo';
 const STORAGE_KEY_CODIGO_EXPIRACAO = 'lotoFacil_codigo_expiracao';
+const STORAGE_KEY_USER_ID = 'lotoFacil_user_id';
+const STORAGE_KEY_CODIGOS_PESSOAIS = 'lotoFacil_codigos_pessoais';
+const STORAGE_KEY_CODIGOS_TEMPORAIS_USADOS = 'lotoFacil_codigos_temporais_usados';
+
+// Valor especial para códigos ilimitados
+const CODIGO_ILIMITADO = -1;
 
 // Lista de códigos de ativação válidos com seus períodos de validade
-// Períodos: 15 dias, 30 dias, 6 meses (180 dias), 1 ano (365 dias)
+// Períodos: 15 dias, 30 dias, 6 meses (180 dias), 1 ano (365 dias), ilimitado (-1)
 const CODIGOS_VALIDOS = {
     // Códigos de 15 dias
     'ATIVO15D': 15,
@@ -52,8 +58,111 @@ const CODIGOS_VALIDOS = {
     'PREMIUM1A': 365,
     'COUTI1A': 365,
     'UNLIMITED1A': 365,
-    'VIP2024': 365
+    'VIP2024': 365,
+    
+    // Códigos pessoais ilimitados (únicos por usuário)
+    'P&RSONAL001': CODIGO_ILIMITADO,
+    'PERSON@L002': CODIGO_ILIMITADO,
+    'PROFILE003': CODIGO_ILIMITADO,
+    '$Atenccao004': CODIGO_ILIMITADO,
+    '*#COABITACAO005': CODIGO_ILIMITADO
 };
+
+/**
+ * Gera ou recupera o ID único do usuário
+ */
+function getUserId() {
+    let userId = localStorage.getItem(STORAGE_KEY_USER_ID);
+    
+    if (!userId) {
+        // Gera um ID único baseado em timestamp + random + user agent
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substring(2, 15);
+        const userAgent = navigator.userAgent.substring(0, 10);
+        userId = btoa(`${timestamp}-${random}-${userAgent}`).substring(0, 32);
+        localStorage.setItem(STORAGE_KEY_USER_ID, userId);
+    }
+    
+    return userId;
+}
+
+/**
+ * Obtém o registro de códigos pessoais ativados
+ */
+function getCodigosPessoais() {
+    const codigosStr = localStorage.getItem(STORAGE_KEY_CODIGOS_PESSOAIS);
+    return codigosStr ? JSON.parse(codigosStr) : {};
+}
+
+/**
+ * Salva o registro de códigos ativados (aplica-se a TODOS os códigos)
+ */
+function setCodigosPessoais(codigos) {
+    localStorage.setItem(STORAGE_KEY_CODIGOS_PESSOAIS, JSON.stringify(codigos));
+}
+
+/**
+ * Verifica se um código já foi usado por outro usuário
+ * (aplica-se a TODOS os códigos: temporais e pessoais)
+ */
+function codigoJaUsadoPorOutroUsuario(codigo) {
+    const codigos = getCodigosPessoais();
+    const userId = getUserId();
+    
+    // Se o código existe e foi usado por outro usuário
+    if (codigos[codigo] && codigos[codigo] !== userId) {
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * Registra o uso de um código para o usuário atual
+ * (aplica-se a TODOS os códigos: temporais e pessoais)
+ */
+function registrarCodigo(codigo) {
+    const codigos = getCodigosPessoais();
+    const userId = getUserId();
+    codigos[codigo] = userId;
+    setCodigosPessoais(codigos);
+}
+
+// Funções mantidas para compatibilidade (deprecated - usar as novas acima)
+function codigoPessoalJaUsado(codigo) {
+    return codigoJaUsadoPorOutroUsuario(codigo);
+}
+
+function registrarCodigoPessoal(codigo) {
+    registrarCodigo(codigo);
+}
+
+/**
+ * Obtém a lista de códigos temporais já utilizados pelo usuário atual
+ */
+function getCodigosTemporaisUsados() {
+    const codigosStr = localStorage.getItem(STORAGE_KEY_CODIGOS_TEMPORAIS_USADOS);
+    return codigosStr ? JSON.parse(codigosStr) : [];
+}
+
+/**
+ * Registra um código temporal como usado pelo usuário atual
+ */
+function registrarCodigoTemporalUsado(codigo) {
+    const codigos = getCodigosTemporaisUsados();
+    if (!codigos.includes(codigo)) {
+        codigos.push(codigo);
+        localStorage.setItem(STORAGE_KEY_CODIGOS_TEMPORAIS_USADOS, JSON.stringify(codigos));
+    }
+}
+
+/**
+ * Verifica se um código temporal já foi usado pelo usuário atual
+ */
+function codigoTemporalJaUsado(codigo) {
+    const codigos = getCodigosTemporaisUsados();
+    return codigos.includes(codigo);
+}
 
 // Estado global
 let numerosExcluir = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY_NUMEROS_EXCLUIR) || '[]'));
@@ -639,14 +748,41 @@ function incrementarContador(quantidade = 1) {
  */
 function isCodigoAtivo() {
     const expiracaoStr = localStorage.getItem(STORAGE_KEY_CODIGO_EXPIRACAO);
+    
+    // Se não há expiração salva, verifica se é código ilimitado
     if (!expiracaoStr) {
+        const codigoAtivo = localStorage.getItem(STORAGE_KEY_CODIGO_ATIVO);
+        if (codigoAtivo) {
+            // Se for código pessoal ilimitado, verifica se ainda pertence ao usuário
+            const codigos = getCodigosPessoais();
+            const userId = getUserId();
+            if (codigos[codigoAtivo] === userId) {
+                return true; // Código ilimitado ativo para este usuário
+            }
+        }
         return false;
     }
     
     const expiracao = parseInt(expiracaoStr, 10);
+    
+    // Se for código ilimitado (-1), sempre retorna true se está ativo
+    if (expiracao === CODIGO_ILIMITADO) {
+        const codigoAtivo = localStorage.getItem(STORAGE_KEY_CODIGO_ATIVO);
+        if (codigoAtivo) {
+            // Verifica se ainda pertence ao usuário atual
+            const codigos = getCodigosPessoais();
+            const userId = getUserId();
+            if (codigos[codigoAtivo] === userId) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
     const agora = Date.now();
     
-    // Se passou da data de expiração, remove e retorna false
+    // Se passou da data de expiração, remove (o código já está registrado para este usuário)
+    // Não permite reativação pois o código já está vinculado a este usuário
     if (agora > expiracao) {
         localStorage.removeItem(STORAGE_KEY_CODIGO_ATIVO);
         localStorage.removeItem(STORAGE_KEY_CODIGO_EXPIRACAO);
@@ -666,6 +802,12 @@ function getCodigoExpiracaoFormatada() {
     }
     
     const expiracao = parseInt(expiracaoStr, 10);
+    
+    // Se for código ilimitado, retorna null (sem expiração)
+    if (expiracao === CODIGO_ILIMITADO) {
+        return null;
+    }
+    
     const data = new Date(expiracao);
     return data.toLocaleDateString('pt-BR', { 
         day: '2-digit', 
@@ -686,6 +828,12 @@ function getDiasRestantes() {
     }
     
     const expiracao = parseInt(expiracaoStr, 10);
+    
+    // Se for código ilimitado, retorna -1 para indicar ilimitado
+    if (expiracao === CODIGO_ILIMITADO) {
+        return -1;
+    }
+    
     const agora = Date.now();
     const diferenca = expiracao - agora;
     
@@ -699,11 +847,11 @@ function getDiasRestantes() {
 /**
  * Ativa um código de ativação
  * @param {string} codigo - Código a ser validado
- * @returns {object} - Retorna { sucesso: boolean, dias: number } ou { sucesso: false }
+ * @returns {object} - Retorna { sucesso: boolean, dias: number, motivo?: string } ou { sucesso: false, motivo?: string }
  */
 function ativarCodigo(codigo) {
     if (!codigo || codigo.trim() === '') {
-        return { sucesso: false };
+        return { sucesso: false, motivo: 'Código vazio' };
     }
     
     const codigoLimpo = codigo.trim().toUpperCase();
@@ -711,17 +859,43 @@ function ativarCodigo(codigo) {
     // Verifica se o código está na lista de códigos válidos
     const diasValidade = CODIGOS_VALIDOS[codigoLimpo];
     
-    if (diasValidade) {
+    if (diasValidade !== undefined) {
+        // Se for código pessoal ilimitado
+        if (diasValidade === CODIGO_ILIMITADO) {
+            // Verifica se já foi usado por outro usuário
+            if (codigoJaUsadoPorOutroUsuario(codigoLimpo)) {
+                return { sucesso: false, motivo: 'Este código já foi utilizado por outro usuário. Cada código só pode ser usado por um usuário.' };
+            }
+            
+            // Registra o código para o usuário atual
+            registrarCodigo(codigoLimpo);
+            
+            // Salva como código ativo (ilimitado)
+            localStorage.setItem(STORAGE_KEY_CODIGO_ATIVO, codigoLimpo);
+            localStorage.setItem(STORAGE_KEY_CODIGO_EXPIRACAO, CODIGO_ILIMITADO.toString());
+            
+            return { sucesso: true, dias: CODIGO_ILIMITADO, ilimitado: true };
+        }
+        
+        // Código com validade temporal
+        // Verifica se já foi usado por outro usuário (todos os códigos são únicos por usuário)
+        if (codigoJaUsadoPorOutroUsuario(codigoLimpo)) {
+            return { sucesso: false, motivo: 'Este código já foi utilizado por outro usuário. Cada código só pode ser usado por um usuário.' };
+        }
+        
         const agora = Date.now();
         const expiracao = agora + (diasValidade * 24 * 60 * 60 * 1000); // Adiciona os dias em milissegundos
         
-        localStorage.setItem(STORAGE_KEY_CODIGO_ATIVO, 'true');
+        // Registra o código para o usuário atual ANTES de ativar
+        registrarCodigo(codigoLimpo);
+        
+        localStorage.setItem(STORAGE_KEY_CODIGO_ATIVO, codigoLimpo);
         localStorage.setItem(STORAGE_KEY_CODIGO_EXPIRACAO, expiracao.toString());
         
-        return { sucesso: true, dias: diasValidade };
+        return { sucesso: true, dias: diasValidade, ilimitado: false };
     }
     
-    return { sucesso: false };
+    return { sucesso: false, motivo: 'Código inválido' };
 }
 
 /**
@@ -826,10 +1000,15 @@ function atualizarStatusCodigo() {
         const diasRestantes = getDiasRestantes();
         const expiracaoFormatada = getCodigoExpiracaoFormatada();
         
-        if (diasRestantes > 0) {
+        // Se for código ilimitado
+        if (diasRestantes === -1) {
+            codigoStatus.textContent = `✅ Código pessoal ativo - Jogos ilimitados permanentemente!`;
+        } else if (diasRestantes > 0 && expiracaoFormatada) {
             codigoStatus.textContent = `✅ Código ativo - Jogos ilimitados! Expira em ${diasRestantes} dia(s) (${expiracaoFormatada})`;
-        } else {
+        } else if (expiracaoFormatada) {
             codigoStatus.textContent = `✅ Código ativo - Jogos ilimitados! Expira em ${expiracaoFormatada}`;
+        } else {
+            codigoStatus.textContent = `✅ Código ativo - Jogos ilimitados!`;
         }
         
         codigoStatus.className = 'codigo-status codigo-ativo';
@@ -1376,8 +1555,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 atualizarStatusCodigo();
                 atualizarExibicaoLimite();
                 
-                let mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por ${resultado.dias} dia(s).`;
-                if (resultado.dias === 15) {
+                let mensagem = '';
+                if (resultado.ilimitado) {
+                    mensagem = `✅ Código pessoal ativado com sucesso! Jogos ilimitados permanentemente. Este código agora está vinculado ao seu usuário.`;
+                } else if (resultado.dias === 15) {
                     mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por 15 dias.`;
                 } else if (resultado.dias === 30) {
                     mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por 30 dias.`;
@@ -1385,16 +1566,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por 6 meses.`;
                 } else if (resultado.dias === 365) {
                     mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por 1 ano.`;
+                } else {
+                    mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por ${resultado.dias} dia(s).`;
                 }
                 
                 exibirErro(mensagem);
                 setTimeout(() => {
                     errorMessage.classList.add('hidden');
-                }, 4000);
+                }, 5000);
                 
                 codigoInput.value = '';
             } else {
-                exibirErro('❌ Código inválido. Verifique e tente novamente.');
+                let mensagemErro = '❌ Código inválido. Verifique e tente novamente.';
+                if (resultado.motivo && resultado.motivo.includes('outro usuário')) {
+                    mensagemErro = `❌ ${resultado.motivo}`;
+                }
+                exibirErro(mensagemErro);
                 codigoInput.value = '';
                 codigoInput.focus();
             }
