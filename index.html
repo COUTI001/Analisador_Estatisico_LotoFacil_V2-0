@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analisador Loto Fácil</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body class="theme-light">
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <img src="Logo_01.png" alt="Logo" class="logo">
+                <div class="header-text">
+                    <h1 class="title">
+                        <span class="icon">🎲</span>
+                        Analisador Estatístico da Loto Fácil
+                    </h1>
+                    <p class="subtitle">Análise inteligente baseada nos últimos sorteios</p>
+                </div>
+            </div>
+            <button id="toggleTheme" class="theme-toggle" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+                <span class="theme-icon">🌙</span>
+            </button>
+        </header>
+
+        <main class="main-content">
+            <form id="sorteioForm" class="form">
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="sorteio1" class="label">
+                            <span class="label-number">1</span>
+                            Sorteio 1 (15 números, separados por vírgula)
+                        </label>
+                        <span class="contador-numeros" id="contador1">0/15</span>
+                        <button type="button" class="btn-limpar-campo" data-campo="sorteio1" title="Limpar campo">🗑️</button>
+                    </div>
+                    <input 
+                        type="text" 
+                        id="sorteio1" 
+                        class="input"
+                        placeholder="Ex: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15"
+                        aria-label="Sorteio 1, digite 15 números separados por vírgula"
+                    >
+                    <div class="seletor-numeros" data-target="sorteio1"></div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="sorteio2" class="label">
+                            <span class="label-number">2</span>
+                            Sorteio 2 (15 números, separados por vírgula)
+                        </label>
+                        <span class="contador-numeros" id="contador2">0/15</span>
+                        <button type="button" class="btn-limpar-campo" data-campo="sorteio2" title="Limpar campo">🗑️</button>
+                    </div>
+                    <input 
+                        type="text" 
+                        id="sorteio2" 
+                        class="input"
+                        placeholder="Ex: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15"
+                        aria-label="Sorteio 2, digite 15 números separados por vírgula"
+                    >
+                    <div class="seletor-numeros" data-target="sorteio2"></div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="sorteio3" class="label">
+                            <span class="label-number">3</span>
+                            Sorteio 3 (15 números, separados por vírgula)
+                        </label>
+                        <span class="contador-numeros" id="contador3">0/15</span>
+                        <button type="button" class="btn-limpar-campo" data-campo="sorteio3" title="Limpar campo">🗑️</button>
+                    </div>
+                    <input 
+                        type="text" 
+                        id="sorteio3" 
+                        class="input"
+                        placeholder="Ex: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15"
+                        aria-label="Sorteio 3, digite 15 números separados por vírgula"
+                    >
+                    <div class="seletor-numeros" data-target="sorteio3"></div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="resultadoAtual" class="label">
+                            <span class="label-number">✓</span>
+                            Resultado do Jogo Atual (15 números, separados por vírgula)
+                        </label>
+                        <span class="contador-numeros" id="contador4">0/15</span>
+                        <button type="button" class="btn-limpar-campo" data-campo="resultadoAtual" title="Limpar campo">🗑️</button>
+                    </div>
+                    <input 
+                        type="text" 
+                        id="resultadoAtual" 
+                        class="input"
+                        placeholder="Ex: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15"
+                        aria-label="Resultado do jogo atual, digite 15 números separados por vírgula"
+                    >
+                    <div class="seletor-numeros" data-target="resultadoAtual"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="modoGeracao" class="label">
+                        <span class="label-number">⚙️</span>
+                        Modo de Geração
+                    </label>
+                    <select id="modoGeracao" class="select-box" aria-label="Selecione o modo de geração">
+                        <option value="balanceado">Balanceado (Padrão)</option>
+                        <option value="conservador">Conservador (Prioriza frequência)</option>
+                        <option value="agressivo">Agressivo (Prioriza números frios)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="quantidadeJogos" class="label">
+                        <span class="label-number">🎲</span>
+                        Quantidade de Jogos a Gerar
+                    </label>
+                    <select id="quantidadeJogos" class="select-box" aria-label="Selecione quantidade de jogos">
+                        <option value="1">1 Jogo</option>
+                        <option value="2">2 Jogos</option>
+                        <option value="3">3 Jogos</option>
+                    </select>
+                </div>
+
+                <div class="form-group avancado-section">
+                    <div class="avancado-header">
+                        <label class="label">
+                            <span class="label-number">🎯</span>
+                            Opções Avançadas
+                        </label>
+                        <button type="button" class="btn-toggle" id="toggleAvancado" aria-expanded="false">
+                            <span>Mostrar</span>
+                            <span class="toggle-icon">▼</span>
+                        </button>
+                    </div>
+                    <div id="opcoesAvancadas" class="opcoes-avancadas hidden">
+                        <div class="filtro-numeros">
+                            <label>Números a Excluir (opcional):</label>
+                            <div id="numerosExcluir" class="numeros-grid-filtro">
+                                <!-- Será preenchido via JavaScript -->
+                            </div>
+                        </div>
+                        <div class="filtro-numeros">
+                            <label>Números a Incluir (opcional):</label>
+                            <div id="numerosIncluir" class="numeros-grid-filtro">
+                                <!-- Será preenchido via JavaScript -->
+                            </div>
+                        </div>
+                        <button type="button" class="btn-limpar-filtros" id="limparFiltros">Limpar Filtros</button>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-gerar" id="btnGerar">
+                    <span class="btn-text">Gerar Jogos</span>
+                    <span class="btn-icon">🎯</span>
+                </button>
+
+                <div id="limiteContainer" class="limite-container hidden">
+                    <div class="limite-content">
+                        <span class="limite-icon">⏱️</span>
+                        <div class="limite-text">
+                            <span class="limite-label">Gerações hoje: </span>
+                            <span class="limite-contador">0 de 3</span>
+                            <span class="limite-tempo"></span>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            <div class="instrucoes-container">
+                <h3 class="instrucoes-title">📖 Como Funciona</h3>
+                <div class="instrucoes-content">
+                    <ol class="instrucoes-lista">
+                        <li>Preencha os <strong>3 últimos sorteios</strong> da Loto Fácil (15 números cada). Você pode digitar os números separados por vírgula ou usar os <strong>botões numéricos</strong> abaixo de cada campo para seleção visual.</li>
+                        <li>Informe o <strong>resultado do jogo atual</strong> (último sorteio realizado) com 15 números.</li>
+                        <li>Escolha o <strong>modo de geração</strong>: Balanceado (padrão), Conservador (prioriza frequência) ou Agressivo (prioriza números frios).</li>
+                        <li>Selecione a <strong>quantidade de jogos</strong> que deseja gerar (1, 2 ou 3).</li>
+                        <li><strong>Opcional:</strong> Use as <strong>Opções Avançadas</strong> para excluir ou incluir números específicos na geração.</li>
+                        <li>Clique em <strong>"Gerar Jogos"</strong> para obter as sugestões. Use o botão <strong>"📋 Copiar"</strong> em cada jogo para copiar os números.</li>
+                    </ol>
+                    
+                    <div class="instrucoes-algoritmo">
+                        <p><strong>Algoritmo:</strong> O sistema analisa os padrões dos últimos sorteios, priorizando números que não foram sorteados no resultado atual e que apareceram com maior frequência nos sorteios anteriores. O modo selecionado ajusta os pesos do algoritmo para diferentes estratégias.</p>
+                    </div>
+                    
+                    <div class="instrucoes-funcionalidades">
+                        <h4>✨ Funcionalidades Disponíveis:</h4>
+                        <ul class="funcionalidades-lista">
+                            <li><strong>📋 Histórico:</strong> Acesse todos os jogos gerados anteriormente através do botão "Histórico" nos resultados.</li>
+                            <li><strong>📊 Estatísticas:</strong> Visualize gráficos de frequência e análises avançadas (distribuição por dezenas, pares/ímpares, sequências consecutivas) após gerar os jogos.</li>
+                            <li><strong>📄 Exportar:</strong> Exporte seus jogos em PDF ou imagem (PNG) usando os botões de exportação.</li>
+                            <li><strong>🌙 Tema:</strong> Alterne entre tema claro e escuro usando o botão no canto superior direito.</li>
+                            <li><strong>📊 Dashboard:</strong> Acompanhe seu uso diário, total de jogos gerados e estatísticas através do botão "Dashboard" no rodapé.</li>
+                            <li><strong>⌨️ Atalhos:</strong> Use <kbd>Enter</kbd> para gerar jogos e <kbd>ESC</kbd> para fechar modais.</li>
+                            <li><strong>🗑️ Limpar:</strong> Use os botões de limpar em cada campo ou limpe todo o histórico através do botão "Limpar Dados" no rodapé.</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="instrucoes-limite">
+                        <p><strong>⚠️ Limite de Uso:</strong> Você pode gerar até <strong>3 jogos por dia</strong>. Após atingir o limite, o sistema será bloqueado e será liberado automaticamente após <strong>24 horas</strong> do primeiro uso do dia. O contador de gerações é exibido abaixo do botão "Gerar Jogos".</p>
+                    </div>
+                </div>
+                
+                <div class="aviso-container">
+                    <div class="aviso-header">
+                        <span class="aviso-icon">⚠️</span>
+                        <h4 class="aviso-title">Aviso Importante</h4>
+                    </div>
+                    <div class="aviso-content">
+                        <p><strong>Este aplicativo não garante acertos nos resultados da Loto Fácil.</strong></p>
+                        <p>O sistema realiza uma <strong>análise estatística e probabilística</strong> baseada nos padrões históricos dos sorteios informados. Os números sugeridos são apenas indicações calculadas matematicamente e não representam garantia de acerto no próximo sorteio.</p>
+                        <p>Os jogos de loteria são baseados em sorteio aleatório e cada combinação possui a mesma probabilidade matemática de ser sorteada.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="resultadoContainer" class="resultado-container hidden">
+                <div class="resultado-header-actions">
+                    <h2 class="resultado-title">Números Sugeridos</h2>
+                    <div class="resultado-buttons">
+                        <button type="button" class="btn-acao" id="exportarPDF" title="Exportar jogos em PDF">
+                            <span>📄</span> PDF
+                        </button>
+                        <button type="button" class="btn-acao" id="exportarImagem" title="Exportar jogos como imagem">
+                            <span>🖼️</span> Imagem
+                        </button>
+                        <button type="button" class="btn-acao" id="verHistorico" title="Ver histórico de jogos">
+                            <span>📋</span> Histórico
+                        </button>
+                    </div>
+                </div>
+                <div id="jogosGerados">
+                    <!-- Jogos serão inseridos aqui via JavaScript -->
+                </div>
+                <div class="resultado-info">
+                    <p class="info-text">
+                        <span class="info-icon">ℹ️</span>
+                        Sugestão baseada em números não sorteados no resultado atual 
+                        e frequência acima da média nos últimos 3 sorteios.
+                    </p>
+                </div>
+            </div>
+
+            <div id="estatisticasContainer" class="estatisticas-container hidden">
+                <h2 class="estatisticas-title">📊 Estatísticas dos Últimos Sorteios</h2>
+                
+                <div class="grafico-frequencia-container">
+                    <h3 class="grafico-title">Gráfico de Frequência</h3>
+                    <div id="graficoFrequencia" class="grafico-frequencia">
+                        <!-- Será preenchido via JavaScript -->
+                    </div>
+                </div>
+
+                <div class="estatisticas-grid">
+                    <div class="estatistica-box mais-sorteados">
+                        <h3 class="estatistica-box-title">🔥 Números Mais Sorteados</h3>
+                        <div id="maisSorteados" class="estatistica-tabela">
+                            <!-- Será preenchido via JavaScript -->
+                        </div>
+                    </div>
+                    <div class="estatistica-box menos-sorteados">
+                        <h3 class="estatistica-box-title">❄️ Números Menos Sorteados</h3>
+                        <div id="menosSorteados" class="estatistica-tabela">
+                            <!-- Será preenchido via JavaScript -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="analises-avancadas">
+                    <h3 class="analises-title">📈 Análises Avançadas</h3>
+                    <div class="analises-grid">
+                        <div class="analise-box">
+                            <h4>📊 Distribuição por Dezenas</h4>
+                            <div id="distribuicaoDezenas"></div>
+                        </div>
+                        <div class="analise-box">
+                            <h4>⚖️ Pares vs Ímpares</h4>
+                            <div id="paresImpares"></div>
+                        </div>
+                        <div class="analise-box">
+                            <h4>🔢 Sequências Consecutivas</h4>
+                            <div id="sequenciasConsecutivas"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="historicoModal" class="modal hidden" role="dialog" aria-labelledby="historicoTitle" aria-hidden="true">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 id="historicoTitle">📋 Histórico de Jogos Gerados</h2>
+                        <button class="modal-close" id="fecharHistorico" aria-label="Fechar histórico">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="historicoLista"></div>
+                        <button type="button" class="btn-limpar-historico" id="limparHistorico">Limpar Histórico</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dashboardModal" class="modal hidden" role="dialog" aria-labelledby="dashboardTitle" aria-hidden="true">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 id="dashboardTitle">📊 Dashboard de Uso</h2>
+                        <button class="modal-close" id="fecharDashboard" aria-label="Fechar dashboard">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="dashboardContent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorMessage" class="error-message hidden"></div>
+        </main>
+
+        <footer class="footer">
+            <div class="footer-content">
+                <p>Desenvolvido por: André Luiz Coutinho (COUTIINOVATION)</p>
+                <div class="footer-actions">
+                    <button type="button" class="btn-footer" id="btnDashboard" title="Ver dashboard de uso">📊 Dashboard</button>
+                    <button type="button" class="btn-footer" id="btnLimparDados" title="Limpar todos os dados">🗑️ Limpar Dados</button>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
