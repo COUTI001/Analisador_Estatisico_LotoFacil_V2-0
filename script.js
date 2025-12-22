@@ -744,27 +744,35 @@ form.addEventListener('submit', (e) => {
                 
                 // Incrementa contador após gerar com sucesso
                 incrementarContador();
-                atualizarExibicaoLimite();
                 
                 exibirJogos(listaJogos);
                 exibirEstatisticas(tresSorteios);
+                
+                // Atualiza exibição do limite após incrementar (isso já desabilita o botão se necessário)
+                atualizarExibicaoLimite();
             } catch (error) {
                 exibirErro(error.message);
-            } finally {
-                // Reabilita o botão (se não atingiu o limite)
+                // Se deu erro, verifica se ainda pode gerar para reabilitar o botão
                 if (podeGerar()) {
                     btnGerar.disabled = false;
                     btnGerar.querySelector('.btn-text').textContent = 'Gerar Jogos';
+                    btnGerar.classList.remove('btn-bloqueado');
                 } else {
-                    btnGerar.querySelector('.btn-text').textContent = 'Limite Atingido';
+                    // Se atingiu o limite, atualiza a exibição corretamente
+                    atualizarExibicaoLimite();
                 }
             }
         }, 300);
     } catch (error) {
         exibirErro(error.message);
+        // Se deu erro, verifica se ainda pode gerar para reabilitar o botão
         if (podeGerar()) {
             btnGerar.disabled = false;
             btnGerar.querySelector('.btn-text').textContent = 'Gerar Jogos';
+            btnGerar.classList.remove('btn-bloqueado');
+        } else {
+            // Se atingiu o limite, atualiza a exibição corretamente
+            atualizarExibicaoLimite();
         }
     }
 });
