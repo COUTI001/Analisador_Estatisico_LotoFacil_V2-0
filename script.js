@@ -1,7 +1,25 @@
 /**
- * Desenvolvido por: André Luiz Coutinho(COUTIINOVATION)
- * Versão JavaScript/HTML
+ * Desenvolvido por: André Luiz Coutinho (COUTIINOVATION)
+ * Frontend simplificado - Apenas chamadas à API
  */
+
+// Detecta automaticamente a URL base da API
+// Se estiver rodando em localhost:3000, usa relativo (mesma origem)
+// Caso contrário (Live Server, etc), usa http://localhost:3000
+let API_BASE = '';
+const currentPort = window.location.port;
+const currentHost = window.location.hostname;
+
+// Se não está na porta 3000 e está em localhost/127.0.0.1, usa URL absoluta
+if (currentPort !== '3000' && (currentHost === 'localhost' || currentHost === '127.0.0.1')) {
+    API_BASE = 'http://localhost:3000';
+    console.log(`[API] Detectado servidor diferente (porta ${currentPort}), usando API_BASE: ${API_BASE}`);
+} else if (currentPort === '3000') {
+    console.log('[API] Servidor na mesma origem (porta 3000), usando API_BASE relativo');
+} else {
+    // Para outros casos (produção, etc), tenta detectar
+    console.log(`[API] Host: ${currentHost}:${currentPort}, usando API_BASE relativo`);
+}
 
 // Elementos do DOM
 const form = document.getElementById('sorteioForm');
@@ -14,450 +32,275 @@ const maisSorteadosDiv = document.getElementById('maisSorteados');
 const menosSorteadosDiv = document.getElementById('menosSorteados');
 const limiteContainer = document.getElementById('limiteContainer');
 
-// BLOQUEIO IMEDIATO EM MODO ANÔNIMO - Executa antes de qualquer outra coisa
-(function() {
-    'use strict';
-    
-    function verificarModoAnonimoRapido() {
-        try {
-            var testKey = '__rapid_check__' + Date.now();
-            var testVal = 'rapid_' + Math.random();
-            localStorage.setItem(testKey, testVal);
-            var retrieved = localStorage.getItem(testKey);
-            localStorage.removeItem(testKey);
-            return retrieved !== testVal;
-        } catch (e) {
-            return true;
-        }
+// Estado local (apenas para UI)
+let numerosExcluir = new Set();
+let numerosIncluir = new Set();
+
+// Função para exibir erro
+function exibirErro(mensagem) {
+    if (!errorMessage) {
+        console.error('Elemento errorMessage não encontrado! Mensagem:', mensagem);
+        alert('ERRO: ' + mensagem); // Fallback para alert
+        return;
     }
     
-    if (verificarModoAnonimoRapido()) {
-        // Bloqueia o botão imediatamente se existir
-        if (btnGerar) {
-            Object.defineProperty(btnGerar, 'disabled', {
-                get: function() { return true; },
-                set: function() { return; },
-                configurable: false
-            });
-            btnGerar.setAttribute('disabled', 'disabled');
-            btnGerar.classList.add('btn-bloqueado');
-            btnGerar.style.pointerEvents = 'none';
-            btnGerar.style.opacity = '0.6';
-            btnGerar.style.cursor = 'not-allowed';
-            
-            var btnText = btnGerar.querySelector('.btn-text');
-            if (btnText) {
-                btnText.textContent = 'Janela Anônima Não Suportada';
-            }
+    console.error('[ERRO EXIBIDO]', mensagem);
+    errorMessage.textContent = mensagem;
+    errorMessage.classList.remove('hidden');
+    
+    // Scroll para a mensagem de erro
+    errorMessage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    
+    // Remove a mensagem após 10 segundos (aumentado para dar tempo de ler)
+    setTimeout(() => {
+        if (errorMessage) {
+            errorMessage.classList.add('hidden');
+        }
+    }, 10000);
+}
+
+// Função para fazer requisições à API
+async function apiRequest(endpoint, method = 'GET', data = null) {
+    const url = API_BASE + endpoint;
+    console.log(`[API Request] ${method} ${url}`, data);
+    
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout
+        
+        const options = {
+            method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include', // Importante para cookies
+            signal: controller.signal
+        };
+        
+        if (data) {
+            options.body = JSON.stringify(data);
         }
         
-        // Bloqueia o formulário
-        if (form) {
-            var originalSubmit = form.submit;
-            form.submit = function() { return false; };
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
+        console.log(`[API Request] Enviando requisição para: ${url}`);
+        const response = await fetch(url, options);
+        clearTimeout(timeoutId);
+        
+        console.log(`[API Response] Status: ${response.status} ${response.statusText}`);
+        console.log(`[API Response] Headers:`, Object.fromEntries(response.headers.entries()));
+        
+        // Verifica se a resposta é JSON
+        let result;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            result = await response.json();
+            console.log(`[API Response] JSON recebido:`, result);
+        } else {
+            const text = await response.text();
+            console.error(`[API Response] Resposta não é JSON:`, text.substring(0, 200));
+            throw new Error(`Resposta inválida do servidor: ${text.substring(0, 100)}`);
+        }
+        
+        if (!response.ok) {
+            console.error(`[API Error] Status ${response.status}:`, result);
+            throw new Error(result.mensagem || result.erro || `Erro na requisição: ${response.status} ${response.statusText}`);
+        }
+        
+        console.log(`[API Success] Requisição bem-sucedida`);
+        return result;
+    } catch (error) {
+        console.error(`[API Error] Erro na requisição ${method} ${endpoint}:`, error);
+        if (error.name === 'AbortError') {
+            throw new Error('Tempo de espera esgotado. O servidor está demorando muito para responder.');
+        }
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            throw new Error('Erro de conexão com o servidor. Verifique se o servidor está rodando em http://localhost:3000');
+        }
+        throw error;
+    }
+}
+
+// Função para verificar status inicial
+async function verificarStatus() {
+    try {
+        const status = await apiRequest('/api/status');
+        
+        if (!status.sucesso) {
+            if (status.erro === 'MODO_ANONIMO') {
+                bloquearAplicacao();
+                exibirErro(status.mensagem);
                 return false;
-            }, true);
+            }
+            // Se houver outro erro, ainda tenta atualizar com dados padrão
+            atualizarExibicaoLimite({
+                contador: 0,
+                maxGeracoes: 3,
+                codigoAtivo: false
+            });
+            return true;
+        }
+        
+        atualizarExibicaoLimite(status);
+        return true;
+    } catch (error) {
+        console.error('Erro ao verificar status:', error);
+        // Em caso de erro de conexão, habilita o botão por padrão
+        // (o usuário pode tentar gerar e verá o erro específico)
+        atualizarExibicaoLimite({
+            contador: 0,
+            maxGeracoes: 3,
+            codigoAtivo: false
+        });
+        return true; // Retorna true para não bloquear a aplicação completamente
+    }
+}
+
+// Função para bloquear aplicação (modo anônimo detectado)
+function bloquearAplicacao() {
+    if (btnGerar) {
+        btnGerar.disabled = true;
+        btnGerar.classList.add('btn-bloqueado');
+        const btnText = btnGerar.querySelector('.btn-text');
+        if (btnText) {
+            btnText.textContent = 'Janela Anônima Não Suportada';
         }
     }
-})();
-
-// Constantes para controle de limite
-const MAX_GERACOES_POR_DIA = 3;
-const STORAGE_KEY_CONTADOR = 'lotoFacil_contador';
-const STORAGE_KEY_TIMESTAMP = 'lotoFacil_timestamp';
-const STORAGE_KEY_HISTORICO = 'lotoFacil_historico';
-const STORAGE_KEY_TEMA = 'lotoFacil_tema';
-const STORAGE_KEY_NUMEROS_EXCLUIR = 'lotoFacil_numeros_excluir';
-const STORAGE_KEY_NUMEROS_INCLUIR = 'lotoFacil_numeros_incluir';
-const STORAGE_KEY_CODIGO_ATIVO = 'lotoFacil_codigo_ativo';
-const STORAGE_KEY_CODIGO_EXPIRACAO = 'lotoFacil_codigo_expiracao';
-const STORAGE_KEY_USER_ID = 'lotoFacil_user_id';
-const STORAGE_KEY_CODIGOS_PESSOAIS = 'lotoFacil_codigos_pessoais';
-const STORAGE_KEY_CODIGOS_TEMPORAIS_USADOS = 'lotoFacil_codigos_temporais_usados';
-
-// Valor especial para códigos ilimitados
-const CODIGO_ILIMITADO = -1;
-
-// Lista de códigos de ativação válidos com seus períodos de validade
-// Períodos: 15 dias, 30 dias, 6 meses (180 dias), 1 ano (365 dias), ilimitado (-1)
-const CODIGOS_VALIDOS = {
-    // Códigos de 15 dias
-    'ATIVO15D': 15,
-    'LOTO15D': 15,
-    'PREMIUM15D': 15,
     
-    // Códigos de 30 dias
-    'ATIVO30D': 30,
-    'LOTO30D': 30,
-    'PREMIUM30D': 30,
-    'COUTI30D': 30,
+    const inputs = document.querySelectorAll('#sorteioForm input, #sorteioForm select, #sorteioForm button');
+    inputs.forEach(input => {
+        if (input.id !== 'btnGerar') {
+            input.disabled = true;
+        }
+    });
     
-    // Códigos de 6 meses (180 dias)
-    'ATIVO6M': 180,
-    'LOTO6M': 180,
-    'PREMIUM6M': 180,
-    'COUTI6M': 180,
-    'UNLIMITED6M': 180,
-    
-    // Códigos de 1 ano (365 dias)
-    'ATIVO1A': 365,
-    'LOTO1A': 365,
-    'PREMIUM1A': 365,
-    'COUTI1A': 365,
-    'UNLIMITED1A': 365,
-    'VIP2024': 365,
-    
-    // Códigos pessoais ilimitados (únicos por usuário)
-    'P&RSONAL001': CODIGO_ILIMITADO,
-    'PERSON@L002': CODIGO_ILIMITADO,
-    'PROFILE003': CODIGO_ILIMITADO,
-    '$Atenccao004': CODIGO_ILIMITADO,
-    '*#COABITACAO005': CODIGO_ILIMITADO
-};
-
-/**
- * Gera ou recupera o ID único do usuário
- */
-function getUserId() {
-    let userId = localStorage.getItem(STORAGE_KEY_USER_ID);
-    
-    if (!userId) {
-        // Gera um ID único baseado em timestamp + random + user agent
-        const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(2, 15);
-        const userAgent = navigator.userAgent.substring(0, 10);
-        userId = btoa(`${timestamp}-${random}-${userAgent}`).substring(0, 32);
-        localStorage.setItem(STORAGE_KEY_USER_ID, userId);
-    }
-    
-    return userId;
-}
-
-/**
- * Obtém o registro de códigos pessoais ativados
- */
-function getCodigosPessoais() {
-    const codigosStr = localStorage.getItem(STORAGE_KEY_CODIGOS_PESSOAIS);
-    return codigosStr ? JSON.parse(codigosStr) : {};
-}
-
-/**
- * Salva o registro de códigos ativados (aplica-se a TODOS os códigos)
- */
-function setCodigosPessoais(codigos) {
-    localStorage.setItem(STORAGE_KEY_CODIGOS_PESSOAIS, JSON.stringify(codigos));
-}
-
-/**
- * Verifica se um código já foi usado por outro usuário
- * (aplica-se a TODOS os códigos: temporais e pessoais)
- */
-function codigoJaUsadoPorOutroUsuario(codigo) {
-    const codigos = getCodigosPessoais();
-    const userId = getUserId();
-    
-    // Se o código existe e foi usado por outro usuário
-    if (codigos[codigo] && codigos[codigo] !== userId) {
-        return true;
-    }
-    
-    return false;
-}
-
-/**
- * Registra o uso de um código para o usuário atual
- * (aplica-se a TODOS os códigos: temporais e pessoais)
- */
-function registrarCodigo(codigo) {
-    const codigos = getCodigosPessoais();
-    const userId = getUserId();
-    codigos[codigo] = userId;
-    setCodigosPessoais(codigos);
-}
-
-// Funções mantidas para compatibilidade (deprecated - usar as novas acima)
-function codigoPessoalJaUsado(codigo) {
-    return codigoJaUsadoPorOutroUsuario(codigo);
-}
-
-function registrarCodigoPessoal(codigo) {
-    registrarCodigo(codigo);
-}
-
-/**
- * Obtém a lista de códigos temporais já utilizados pelo usuário atual
- */
-function getCodigosTemporaisUsados() {
-    const codigosStr = localStorage.getItem(STORAGE_KEY_CODIGOS_TEMPORAIS_USADOS);
-    return codigosStr ? JSON.parse(codigosStr) : [];
-}
-
-/**
- * Registra um código temporal como usado pelo usuário atual
- */
-function registrarCodigoTemporalUsado(codigo) {
-    const codigos = getCodigosTemporaisUsados();
-    if (!codigos.includes(codigo)) {
-        codigos.push(codigo);
-        localStorage.setItem(STORAGE_KEY_CODIGOS_TEMPORAIS_USADOS, JSON.stringify(codigos));
+    const codigoContainer = document.getElementById('codigoAtivacaoContainer');
+    if (codigoContainer) {
+        codigoContainer.style.display = 'none';
     }
 }
 
-/**
- * Verifica se um código temporal já foi usado pelo usuário atual
- */
-function codigoTemporalJaUsado(codigo) {
-    const codigos = getCodigosTemporaisUsados();
-    return codigos.includes(codigo);
+// Função para atualizar exibição do limite
+function atualizarExibicaoLimite(status) {
+    if (!limiteContainer || !status) {
+        // Se não há status, habilita o botão por padrão
+        if (btnGerar) {
+            btnGerar.disabled = false;
+            btnGerar.classList.remove('btn-bloqueado');
+            const btnText = btnGerar.querySelector('.btn-text');
+            if (btnText) {
+                btnText.textContent = 'Gerar Jogos';
+            }
+        }
+        return;
+    }
+    
+    // Verifica se pode gerar (nova propriedade do status)
+    const podeGerar = status.podeGerar !== undefined ? status.podeGerar : (status.contador < status.maxGeracoes);
+    
+    if (status.codigoAtivo) {
+        limiteContainer.classList.add('hidden');
+        btnGerar.disabled = false;
+        btnGerar.classList.remove('btn-bloqueado');
+        const btnText = btnGerar.querySelector('.btn-text');
+        if (btnText) {
+            btnText.textContent = 'Gerar Jogos';
+        }
+        return;
+    }
+    
+    if (status.contador === 0) {
+        limiteContainer.classList.add('hidden');
+        // Habilita o botão quando contador é 0 (ainda pode gerar)
+        btnGerar.disabled = false;
+        btnGerar.classList.remove('btn-bloqueado');
+        const btnText = btnGerar.querySelector('.btn-text');
+        if (btnText) {
+            btnText.textContent = 'Gerar Jogos';
+        }
+        return;
+    }
+    
+    limiteContainer.classList.remove('hidden');
+    const contadorSpan = limiteContainer.querySelector('.limite-contador');
+    if (contadorSpan) {
+        contadorSpan.textContent = `${status.contador} de ${status.maxGeracoes}`;
+    }
+    
+    const restantes = status.maxGeracoes - status.contador;
+    
+    // Usa a propriedade podeGerar se disponível, senão calcula
+    if (!podeGerar || restantes === 0) {
+        limiteContainer.className = 'limite-container limite-bloqueado';
+        btnGerar.disabled = true;
+        btnGerar.classList.add('btn-bloqueado');
+        const btnText = btnGerar.querySelector('.btn-text');
+        if (btnText) {
+            btnText.textContent = 'Limite Atingido';
+        }
+        
+        // Adiciona informação de tempo restante se disponível
+        if (status.tempoRestante) {
+            const horasRestantes = Math.ceil(status.tempoRestante / (60 * 60 * 1000));
+            const tempoSpan = limiteContainer.querySelector('.limite-tempo');
+            if (tempoSpan) {
+                tempoSpan.textContent = `Liberado em ${horasRestantes} hora(s)`;
+            }
+        }
+    } else {
+        limiteContainer.className = 'limite-container limite-ativo';
+        btnGerar.disabled = false;
+        btnGerar.classList.remove('btn-bloqueado');
+        const btnText = btnGerar.querySelector('.btn-text');
+        if (btnText) {
+            btnText.textContent = 'Gerar Jogos';
+        }
+        
+        const tempoSpan = limiteContainer.querySelector('.limite-tempo');
+        if (tempoSpan) {
+            tempoSpan.textContent = `${restantes} geração(ões) restante(s)`;
+        }
+    }
 }
 
-// Estado global
-let numerosExcluir = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY_NUMEROS_EXCLUIR) || '[]'));
-let numerosIncluir = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY_NUMEROS_INCLUIR) || '[]'));
-
-/**
- * Converte uma linha de texto em uma lista de 15 inteiros (1 a 25, sem repetição).
- */
+// Função para parse de sorteio
 function parseSorteio(texto, nomeCampo) {
     if (!texto || texto.trim() === '') {
         throw new Error(`${nomeCampo}: digite 15 números separados por vírgula.`);
     }
-
+    
     const partes = texto.split(',').map(p => p.trim()).filter(p => p !== '');
     
     if (partes.length !== 15) {
         throw new Error(`${nomeCampo}: você deve informar exatamente 15 números.`);
     }
-
+    
     const numeros = [];
     const numerosVistos = new Set();
-
+    
     for (const parte of partes) {
         const valor = parseInt(parte, 10);
         
         if (isNaN(valor)) {
             throw new Error(`${nomeCampo}: certifique-se de digitar apenas números inteiros separados por vírgula.`);
         }
-
+        
         if (valor < 1 || valor > 25) {
             throw new Error(`${nomeCampo}: todos os números devem estar entre 1 e 25.`);
         }
-
+        
         if (numerosVistos.has(valor)) {
             throw new Error(`${nomeCampo}: os 15 números não devem conter repetições.`);
         }
-
+        
         numeros.push(valor);
         numerosVistos.add(valor);
     }
-
+    
     return numeros;
 }
 
-/**
- * Lê e valida os 3 últimos sorteios informados pelo usuário.
- */
-function lerTresSorteios() {
-    const sorteio1 = parseSorteio(
-        document.getElementById('sorteio1').value,
-        'Sorteio 1'
-    );
-    const sorteio2 = parseSorteio(
-        document.getElementById('sorteio2').value,
-        'Sorteio 2'
-    );
-    const sorteio3 = parseSorteio(
-        document.getElementById('sorteio3').value,
-        'Sorteio 3'
-    );
-
-    return [sorteio1, sorteio2, sorteio3];
-}
-
-/**
- * Obtém o modo de geração selecionado
- */
-function obterModoGeracao() {
-    const select = document.getElementById('modoGeracao');
-    return select ? select.value : 'balanceado';
-}
-
-/**
- * Gera 15 números combinando:
- * - Números que NÃO foram sorteados no resultado atual
- * - Média dos números que mais saíram nos 3 últimos sorteios
- */
-function realizarSorteioComBaseNosTresSorteios(tresSorteios, resultadoAtual, modo = 'balanceado') {
-    const numerosSorteados = [];
-
-    // Identifica os números que NÃO foram sorteados no resultado atual
-    const numerosNaoSorteados = [];
-    for (let i = 1; i <= 25; i++) {
-        if (!resultadoAtual.includes(i)) {
-            numerosNaoSorteados.push(i);
-        }
-    }
-
-    // Conta a frequência de cada número (1..25) nos três sorteios
-    const frequencias = new Array(26).fill(0); // índice 0 não usado
-    
-    for (const sorteio of tresSorteios) {
-        for (const num of sorteio) {
-            if (num >= 1 && num <= 25) {
-                frequencias[num]++;
-            }
-        }
-    }
-
-    // Calcula a média de frequência (soma das frequências / 3)
-    let somaFrequencias = 0;
-    for (let i = 1; i <= 25; i++) {
-        somaFrequencias += frequencias[i];
-    }
-    const mediaFrequencia = somaFrequencias / 3.0;
-
-    // Cria lista de números possíveis e seus "pesos" combinando:
-    // - Prioridade para números NÃO sorteados no resultado atual
-    // - Peso baseado na frequência acima da média nos três últimos sorteios
-    const numerosDisponiveis = [];
-    const pesos = [];
-
-    // Ajusta pesos baseado no modo de geração
-    let pesoNaoSorteados = 5;
-    let pesoFrequencia = 2;
-    let pesoNumerosFrios = 0;
-
-    if (modo === 'conservador') {
-        pesoNaoSorteados = 3;
-        pesoFrequencia = 5; // Prioriza frequência
-        pesoNumerosFrios = 0;
-    } else if (modo === 'agressivo') {
-        pesoNaoSorteados = 7;
-        pesoFrequencia = 1;
-        pesoNumerosFrios = 4; // Prioriza números frios
-    }
-
-    for (let i = 1; i <= 25; i++) {
-        // Exclui números marcados para exclusão
-        if (numerosExcluir.has(i)) {
-            continue;
-        }
-
-        numerosDisponiveis.push(i);
-        let peso = 1; // peso base mínimo
-
-        // Se está na lista de inclusão forçada, peso muito alto
-        if (numerosIncluir.has(i)) {
-            peso += 20;
-        }
-
-        // Bônus se o número NÃO foi sorteado no resultado atual
-        if (numerosNaoSorteados.includes(i)) {
-            peso += pesoNaoSorteados;
-        }
-
-        // Bônus se a frequência está acima da média nos três últimos sorteios
-        if (frequencias[i] > mediaFrequencia) {
-            peso += Math.floor((frequencias[i] - mediaFrequencia) * pesoFrequencia);
-        } else if (modo === 'agressivo' && frequencias[i] < mediaFrequencia) {
-            // Para modo agressivo, bônus para números frios
-            peso += Math.floor((mediaFrequencia - frequencias[i]) * pesoNumerosFrios);
-        }
-
-        pesos.push(peso);
-    }
-
-    // Sorteia 15 números sem repetição, usando pesos (probabilidade proporcional ao peso)
-    for (let i = 0; i < 15 && numerosDisponiveis.length > 0; i++) {
-        // Soma total dos pesos atuais
-        let somaPesos = 0;
-        for (const peso of pesos) {
-            somaPesos += peso;
-        }
-
-        const r = Math.floor(Math.random() * somaPesos) + 1; // valor entre 1 e somaPesos
-        let acumulado = 0;
-        let indiceEscolhido = 0;
-
-        for (let j = 0; j < pesos.length; j++) {
-            acumulado += pesos[j];
-            if (r <= acumulado) {
-                indiceEscolhido = j;
-                break;
-            }
-        }
-
-        const numeroSorteado = numerosDisponiveis[indiceEscolhido];
-        numerosSorteados.push(numeroSorteado);
-
-        // Remove o número e seu peso para não repetir
-        numerosDisponiveis.splice(indiceEscolhido, 1);
-        pesos.splice(indiceEscolhido, 1);
-    }
-
-    // Ordena os números sorteados antes de retornar
-    numerosSorteados.sort((a, b) => a - b);
-
-    return numerosSorteados;
-}
-
-/**
- * Salva jogo no histórico
- */
-function salvarNoHistorico(listaJogos) {
-    const historico = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORICO) || '[]');
-    const novoItem = {
-        data: new Date().toISOString(),
-        jogos: listaJogos,
-        modo: obterModoGeracao()
-    };
-    historico.unshift(novoItem);
-    // Mantém apenas os últimos 50 registros
-    if (historico.length > 50) {
-        historico.splice(50);
-    }
-    localStorage.setItem(STORAGE_KEY_HISTORICO, JSON.stringify(historico));
-}
-
-/**
- * Copia números para área de transferência
- */
-async function copiarNumeros(numeros) {
-    const texto = numeros.join(', ');
-    try {
-        await navigator.clipboard.writeText(texto);
-        return true;
-    } catch (err) {
-        // Fallback para navegadores antigos
-        const textArea = document.createElement('textarea');
-        textArea.value = texto;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.select();
-        try {
-            document.execCommand('copy');
-            document.body.removeChild(textArea);
-            return true;
-        } catch (e) {
-            document.body.removeChild(textArea);
-            return false;
-        }
-    }
-}
-
-/**
- * Exibe os jogos gerados na interface
- */
+// Função para exibir jogos
 function exibirJogos(listaJogos) {
     jogosGerados.innerHTML = '';
-    
-    // Salva no histórico
-    salvarNoHistorico(listaJogos);
     
     listaJogos.forEach((jogo, index) => {
         const jogoSection = document.createElement('div');
@@ -474,14 +317,17 @@ function exibirJogos(listaJogos) {
         btnCopiar.innerHTML = '<span>📋</span> Copiar';
         btnCopiar.title = 'Copiar números para área de transferência';
         btnCopiar.addEventListener('click', async () => {
-            const sucesso = await copiarNumeros(jogo);
-            if (sucesso) {
+            const texto = jogo.join(', ');
+            try {
+                await navigator.clipboard.writeText(texto);
                 btnCopiar.innerHTML = '<span>✓</span> Copiado!';
                 btnCopiar.classList.add('copiado');
                 setTimeout(() => {
                     btnCopiar.innerHTML = '<span>📋</span> Copiar';
                     btnCopiar.classList.remove('copiado');
                 }, 2000);
+            } catch (err) {
+                console.error('Erro ao copiar:', err);
             }
         });
         
@@ -502,188 +348,18 @@ function exibirJogos(listaJogos) {
         jogoSection.appendChild(numerosGrid);
         jogosGerados.appendChild(jogoSection);
     });
-
-    resultadoContainer.classList.remove('hidden');
     
-    // Scroll suave para o resultado
+    resultadoContainer.classList.remove('hidden');
     resultadoContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-/**
- * Calcula estatísticas dos últimos 3 sorteios
- */
-function calcularEstatisticas(tresSorteios) {
-    // Conta a frequência de cada número (1..25) nos três sorteios
-    const frequencias = new Array(26).fill(0); // índice 0 não usado
+// Função para exibir estatísticas
+function exibirEstatisticas(estatisticas) {
+    const { maisSorteados, menosSorteados, frequencias, distribuicaoDezenas, pares, impares, mediaSequencias, totalSequencias } = estatisticas;
     
-    for (const sorteio of tresSorteios) {
-        for (const num of sorteio) {
-            if (num >= 1 && num <= 25) {
-                frequencias[num]++;
-            }
-        }
-    }
-
-    // Cria lista de números com suas frequências
-    const numerosComFrequencia = [];
-    for (let i = 1; i <= 25; i++) {
-        numerosComFrequencia.push({
-            numero: i,
-            frequencia: frequencias[i]
-        });
-    }
-
-    // Ordena por frequência (maior para menor)
-    const maisSorteados = [...numerosComFrequencia]
-        .sort((a, b) => b.frequencia - a.frequencia)
-        .slice(0, 10); // Top 10
-
-    // Ordena por frequência (menor para maior)
-    const menosSorteados = [...numerosComFrequencia]
-        .sort((a, b) => a.frequencia - b.frequencia)
-        .slice(0, 10); // Bottom 10
-
-    // Análises avançadas
-    const distribuicaoDezenas = {
-        '1-5': 0, '6-10': 0, '11-15': 0, '16-20': 0, '21-25': 0
-    };
-    
-    let pares = 0;
-    let impares = 0;
-    const sequencias = [];
-
-    for (const sorteio of tresSorteios) {
-        const sorted = [...sorteio].sort((a, b) => a - b);
-        
-        // Distribuição por dezenas
-        for (const num of sorted) {
-            if (num <= 5) distribuicaoDezenas['1-5']++;
-            else if (num <= 10) distribuicaoDezenas['6-10']++;
-            else if (num <= 15) distribuicaoDezenas['11-15']++;
-            else if (num <= 20) distribuicaoDezenas['16-20']++;
-            else distribuicaoDezenas['21-25']++;
-            
-            // Pares vs ímpares
-            if (num % 2 === 0) pares++;
-            else impares++;
-        }
-
-        // Detecta sequências consecutivas
-        let sequenciaAtual = [sorted[0]];
-        for (let i = 1; i < sorted.length; i++) {
-            if (sorted[i] === sorted[i-1] + 1) {
-                sequenciaAtual.push(sorted[i]);
-            } else {
-                if (sequenciaAtual.length >= 2) {
-                    sequencias.push(sequenciaAtual.length);
-                }
-                sequenciaAtual = [sorted[i]];
-            }
-        }
-        if (sequenciaAtual.length >= 2) {
-            sequencias.push(sequenciaAtual.length);
-        }
-    }
-
-    const mediaSequencias = sequencias.length > 0 
-        ? (sequencias.reduce((a, b) => a + b, 0) / sequencias.length).toFixed(1)
-        : 0;
-
-    return { 
-        maisSorteados, 
-        menosSorteados, 
-        frequencias,
-        distribuicaoDezenas,
-        pares: (pares / 3).toFixed(1),
-        impares: (impares / 3).toFixed(1),
-        mediaSequencias,
-        totalSequencias: sequencias.length
-    };
-}
-
-/**
- * Exibe gráfico de frequência
- */
-function exibirGraficoFrequencia(frequencias) {
-    const container = document.getElementById('graficoFrequencia');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    const maxFreq = Math.max(...frequencias.slice(1));
-    
-    for (let i = 1; i <= 25; i++) {
-        const barContainer = document.createElement('div');
-        barContainer.className = 'bar-container';
-        
-        const label = document.createElement('div');
-        label.className = 'bar-label';
-        label.textContent = i;
-        
-        const barWrapper = document.createElement('div');
-        barWrapper.className = 'bar-wrapper';
-        
-        const bar = document.createElement('div');
-        bar.className = 'bar';
-        const altura = maxFreq > 0 ? (frequencias[i] / maxFreq) * 100 : 0;
-        bar.style.height = `${altura}%`;
-        bar.setAttribute('data-freq', frequencias[i]);
-        
-        const freqLabel = document.createElement('div');
-        freqLabel.className = 'bar-freq';
-        freqLabel.textContent = frequencias[i];
-        
-        barWrapper.appendChild(bar);
-        barWrapper.appendChild(freqLabel);
-        barContainer.appendChild(label);
-        barContainer.appendChild(barWrapper);
-        container.appendChild(barContainer);
-    }
-}
-
-/**
- * Exibe análises avançadas
- */
-function exibirAnalisesAvancadas(dados) {
-    // Distribuição por dezenas
-    const distContainer = document.getElementById('distribuicaoDezenas');
-    if (distContainer) {
-        distContainer.innerHTML = Object.entries(dados.distribuicaoDezenas)
-            .map(([range, count]) => 
-                `<div class="dist-item"><strong>${range}:</strong> ${(count / 3).toFixed(1)} por sorteio</div>`
-            ).join('');
-    }
-
-    // Pares vs Ímpares
-    const paresContainer = document.getElementById('paresImpares');
-    if (paresContainer) {
-        paresContainer.innerHTML = `
-            <div class="par-impar-item"><strong>Pares:</strong> ${dados.pares} por sorteio</div>
-            <div class="par-impar-item"><strong>Ímpares:</strong> ${dados.impares} por sorteio</div>
-        `;
-    }
-
-    // Sequências consecutivas
-    const seqContainer = document.getElementById('sequenciasConsecutivas');
-    if (seqContainer) {
-        seqContainer.innerHTML = `
-            <div class="seq-item"><strong>Total de sequências:</strong> ${dados.totalSequencias}</div>
-            <div class="seq-item"><strong>Média de tamanho:</strong> ${dados.mediaSequencias}</div>
-        `;
-    }
-}
-
-/**
- * Exibe as estatísticas na interface
- */
-function exibirEstatisticas(tresSorteios) {
-    const dados = calcularEstatisticas(tresSorteios);
-    const { maisSorteados, menosSorteados } = dados;
-
-    // Limpa conteúdo anterior
     maisSorteadosDiv.innerHTML = '';
     menosSorteadosDiv.innerHTML = '';
-
-    // Cria tabela de mais sorteados
+    
     maisSorteados.forEach((item, index) => {
         const linha = document.createElement('div');
         linha.className = 'estatistica-linha';
@@ -705,8 +381,7 @@ function exibirEstatisticas(tresSorteios) {
         linha.appendChild(frequencia);
         maisSorteadosDiv.appendChild(linha);
     });
-
-    // Cria tabela de menos sorteados
+    
     menosSorteados.forEach((item, index) => {
         const linha = document.createElement('div');
         linha.className = 'estatistica-linha';
@@ -728,634 +403,228 @@ function exibirEstatisticas(tresSorteios) {
         linha.appendChild(frequencia);
         menosSorteadosDiv.appendChild(linha);
     });
-
-    // Exibe gráfico de frequência
-    exibirGraficoFrequencia(dados.frequencias);
     
-    // Exibe análises avançadas
-    exibirAnalisesAvancadas(dados);
-
+    // Gráfico de frequência
+    const container = document.getElementById('graficoFrequencia');
+    if (container) {
+        container.innerHTML = '';
+        const maxFreq = Math.max(...frequencias);
+        
+        for (let i = 0; i < 25; i++) {
+            const barContainer = document.createElement('div');
+            barContainer.className = 'bar-container';
+            
+            const label = document.createElement('div');
+            label.className = 'bar-label';
+            label.textContent = i + 1;
+            
+            const barWrapper = document.createElement('div');
+            barWrapper.className = 'bar-wrapper';
+            
+            const bar = document.createElement('div');
+            bar.className = 'bar';
+            const altura = maxFreq > 0 ? (frequencias[i] / maxFreq) * 100 : 0;
+            bar.style.height = `${altura}%`;
+            bar.setAttribute('data-freq', frequencias[i]);
+            
+            const freqLabel = document.createElement('div');
+            freqLabel.className = 'bar-freq';
+            freqLabel.textContent = frequencias[i];
+            
+            barWrapper.appendChild(bar);
+            barWrapper.appendChild(freqLabel);
+            barContainer.appendChild(label);
+            barContainer.appendChild(barWrapper);
+            container.appendChild(barContainer);
+        }
+    }
+    
+    // Análises avançadas
+    const distContainer = document.getElementById('distribuicaoDezenas');
+    if (distContainer) {
+        distContainer.innerHTML = Object.entries(distribuicaoDezenas)
+            .map(([range, count]) => 
+                `<div class="dist-item"><strong>${range}:</strong> ${(count / 3).toFixed(1)} por sorteio</div>`
+            ).join('');
+    }
+    
+    const paresContainer = document.getElementById('paresImpares');
+    if (paresContainer) {
+        paresContainer.innerHTML = `
+            <div class="par-impar-item"><strong>Pares:</strong> ${pares} por sorteio</div>
+            <div class="par-impar-item"><strong>Ímpares:</strong> ${impares} por sorteio</div>
+        `;
+    }
+    
+    const seqContainer = document.getElementById('sequenciasConsecutivas');
+    if (seqContainer) {
+        seqContainer.innerHTML = `
+            <div class="seq-item"><strong>Total de sequências:</strong> ${totalSequencias}</div>
+            <div class="seq-item"><strong>Média de tamanho:</strong> ${mediaSequencias}</div>
+        `;
+    }
+    
     estatisticasContainer.classList.remove('hidden');
 }
 
-
-/**
- * Verifica se já passou 24 horas desde a primeira geração
- */
-function passou24Horas(timestamp) {
-    const agora = Date.now();
-    const diferenca = agora - timestamp;
-    const vinteQuatroHoras = 24 * 60 * 60 * 1000; // 24 horas em milissegundos
-    return diferenca >= vinteQuatroHoras;
-}
-
-/**
- * Verifica se está em modo anônimo/privado
- * Retorna true se estiver em modo anônimo
- * Usa múltiplas técnicas para garantir detecção confiável
- */
-function isModoAnonimo() {
-    try {
-        // Técnica 1: Tentar escrever e ler do localStorage
-        const testKey1 = '__anonimo_test1__' + Date.now();
-        const testValue1 = 'test_value_' + Math.random();
-        
-        localStorage.setItem(testKey1, testValue1);
-        const retrieved1 = localStorage.getItem(testKey1);
-        localStorage.removeItem(testKey1);
-        
-        // Se não conseguiu ler o que escreveu, está em modo anônimo
-        if (retrieved1 !== testValue1) {
-            return true;
-        }
-        
-        // Técnica 2: Verificar se consegue persistir e recuperar dados
-        // Em alguns navegadores, localStorage existe mas não persiste em modo anônimo
-        const persistenceKey = '__persist_test__';
-        const persistenceValue = 'persist_' + Date.now();
-        
-        localStorage.setItem(persistenceKey, persistenceValue);
-        const persistedValue = localStorage.getItem(persistenceKey);
-        localStorage.removeItem(persistenceKey);
-        
-        if (persistedValue !== persistenceValue) {
-            return true;
-        }
-        
-        // Técnica 3: Verificar sessionStorage também
-        try {
-            const testKey3 = '__anonimo_test3__' + Date.now();
-            const testValue3 = 'session_' + Math.random();
-            sessionStorage.setItem(testKey3, testValue3);
-            const sessionRetrieved = sessionStorage.getItem(testKey3);
-            sessionStorage.removeItem(testKey3);
-            
-            if (sessionRetrieved !== testValue3) {
-                return true;
-            }
-        } catch (e) {
-            return true; // SessionStorage bloqueado indica modo anônimo
-        }
-        
-        // Técnica 4: Verificar se consegue escrever e ler valores maiores
-        // Alguns navegadores em modo anônimo têm limitações de tamanho
-        try {
-            const largeKey = '__large_test__';
-            const largeValue = 'x'.repeat(1000) + Date.now();
-            localStorage.setItem(largeKey, largeValue);
-            const largeRetrieved = localStorage.getItem(largeKey);
-            localStorage.removeItem(largeKey);
-            
-            if (largeRetrieved !== largeValue) {
-                return true;
-            }
-        } catch (e) {
-            return true;
-        }
-        
-        // Técnica 5: Verificar múltiplas operações sequenciais
-        // Em modo anônimo, operações podem falhar intermitentemente
-        let failures = 0;
-        for (let i = 0; i < 3; i++) {
-            try {
-                const seqKey = '__seq_test__' + i + '_' + Date.now();
-                const seqValue = 'seq_' + i + '_' + Math.random();
-                localStorage.setItem(seqKey, seqValue);
-                const seqRetrieved = localStorage.getItem(seqKey);
-                localStorage.removeItem(seqKey);
-                
-                if (seqRetrieved !== seqValue) {
-                    failures++;
-                }
-            } catch (e) {
-                failures++;
-            }
-        }
-        
-        // Se mais de uma operação falhou, assume modo anônimo
-        if (failures > 1) {
-            return true;
-        }
-        
-        return false;
-    } catch (e) {
-        // Se qualquer erro ocorrer ao acessar localStorage, assume modo anônimo
-        // Isso é mais seguro do que permitir uso
-        return true;
-    }
-}
-
-/**
- * Obtém o contador de gerações do dia
- */
-function obterContadorGerações() {
-    const timestamp = localStorage.getItem(STORAGE_KEY_TIMESTAMP);
-    const contador = localStorage.getItem(STORAGE_KEY_CONTADOR);
-
-    // Se não existe timestamp ou passou 24 horas, reseta
-    if (!timestamp || passou24Horas(parseInt(timestamp, 10))) {
-        return { contador: 0, timestamp: null };
-    }
-
-    return {
-        contador: parseInt(contador || '0', 10),
-        timestamp: parseInt(timestamp, 10)
-    };
-}
-
-/**
- * Incrementa o contador de gerações pela quantidade especificada
- * @param {number} quantidade - Quantidade de jogos gerados (padrão: 1)
- */
-function incrementarContador(quantidade = 1) {
-    const agora = Date.now();
-    const dados = obterContadorGerações();
-
-    let novoContador;
-    let novoTimestamp;
-
-    if (dados.timestamp === null || passou24Horas(dados.timestamp)) {
-        // Primeira geração do dia ou passou 24 horas
-        novoContador = quantidade;
-        novoTimestamp = agora;
-    } else {
-        // Incrementa contador existente pela quantidade
-        novoContador = dados.contador + quantidade;
-        novoTimestamp = dados.timestamp;
-    }
-
-    localStorage.setItem(STORAGE_KEY_CONTADOR, novoContador.toString());
-    localStorage.setItem(STORAGE_KEY_TIMESTAMP, novoTimestamp.toString());
-
-    return { contador: novoContador, timestamp: novoTimestamp };
-}
-
-/**
- * Verifica se o código de ativação está ativo e não expirado
- */
-function isCodigoAtivo() {
-    const expiracaoStr = localStorage.getItem(STORAGE_KEY_CODIGO_EXPIRACAO);
-    
-    // Se não há expiração salva, verifica se é código ilimitado
-    if (!expiracaoStr) {
-        const codigoAtivo = localStorage.getItem(STORAGE_KEY_CODIGO_ATIVO);
-        if (codigoAtivo) {
-            // Se for código pessoal ilimitado, verifica se ainda pertence ao usuário
-            const codigos = getCodigosPessoais();
-            const userId = getUserId();
-            if (codigos[codigoAtivo] === userId) {
-                return true; // Código ilimitado ativo para este usuário
-            }
-        }
-        return false;
-    }
-    
-    const expiracao = parseInt(expiracaoStr, 10);
-    
-    // Se for código ilimitado (-1), sempre retorna true se está ativo
-    if (expiracao === CODIGO_ILIMITADO) {
-        const codigoAtivo = localStorage.getItem(STORAGE_KEY_CODIGO_ATIVO);
-        if (codigoAtivo) {
-            // Verifica se ainda pertence ao usuário atual
-            const codigos = getCodigosPessoais();
-            const userId = getUserId();
-            if (codigos[codigoAtivo] === userId) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    const agora = Date.now();
-    
-    // Se passou da data de expiração, remove (o código já está registrado para este usuário)
-    // Não permite reativação pois o código já está vinculado a este usuário
-    if (agora > expiracao) {
-        localStorage.removeItem(STORAGE_KEY_CODIGO_ATIVO);
-        localStorage.removeItem(STORAGE_KEY_CODIGO_EXPIRACAO);
-        return false;
-    }
-    
-    return true;
-}
-
-/**
- * Retorna a data de expiração formatada do código ativo
- */
-function getCodigoExpiracaoFormatada() {
-    const expiracaoStr = localStorage.getItem(STORAGE_KEY_CODIGO_EXPIRACAO);
-    if (!expiracaoStr) {
-        return null;
-    }
-    
-    const expiracao = parseInt(expiracaoStr, 10);
-    
-    // Se for código ilimitado, retorna null (sem expiração)
-    if (expiracao === CODIGO_ILIMITADO) {
-        return null;
-    }
-    
-    const data = new Date(expiracao);
-    return data.toLocaleDateString('pt-BR', { 
-        day: '2-digit', 
-        month: '2-digit', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-/**
- * Calcula os dias restantes até a expiração
- */
-function getDiasRestantes() {
-    const expiracaoStr = localStorage.getItem(STORAGE_KEY_CODIGO_EXPIRACAO);
-    if (!expiracaoStr) {
-        return 0;
-    }
-    
-    const expiracao = parseInt(expiracaoStr, 10);
-    
-    // Se for código ilimitado, retorna -1 para indicar ilimitado
-    if (expiracao === CODIGO_ILIMITADO) {
-        return -1;
-    }
-    
-    const agora = Date.now();
-    const diferenca = expiracao - agora;
-    
-    if (diferenca <= 0) {
-        return 0;
-    }
-    
-    return Math.ceil(diferenca / (1000 * 60 * 60 * 24)); // Converte para dias
-}
-
-/**
- * Ativa um código de ativação
- * @param {string} codigo - Código a ser validado
- * @returns {object} - Retorna { sucesso: boolean, dias: number, motivo?: string } ou { sucesso: false, motivo?: string }
- */
-function ativarCodigo(codigo) {
-    if (!codigo || codigo.trim() === '') {
-        return { sucesso: false, motivo: 'Código vazio' };
-    }
-    
-    const codigoLimpo = codigo.trim().toUpperCase();
-    
-    // Verifica se o código está na lista de códigos válidos
-    const diasValidade = CODIGOS_VALIDOS[codigoLimpo];
-    
-    if (diasValidade !== undefined) {
-        // Se for código pessoal ilimitado
-        if (diasValidade === CODIGO_ILIMITADO) {
-            // Verifica se já foi usado por outro usuário
-            if (codigoJaUsadoPorOutroUsuario(codigoLimpo)) {
-                return { sucesso: false, motivo: 'Este código já foi utilizado por outro usuário. Cada código só pode ser usado por um usuário.' };
-            }
-            
-            // Registra o código para o usuário atual
-            registrarCodigo(codigoLimpo);
-            
-            // Salva como código ativo (ilimitado)
-            localStorage.setItem(STORAGE_KEY_CODIGO_ATIVO, codigoLimpo);
-            localStorage.setItem(STORAGE_KEY_CODIGO_EXPIRACAO, CODIGO_ILIMITADO.toString());
-            
-            return { sucesso: true, dias: CODIGO_ILIMITADO, ilimitado: true };
-        }
-        
-        // Código com validade temporal
-        // Verifica se já foi usado por outro usuário (todos os códigos são únicos por usuário)
-        if (codigoJaUsadoPorOutroUsuario(codigoLimpo)) {
-            return { sucesso: false, motivo: 'Este código já foi utilizado por outro usuário. Cada código só pode ser usado por um usuário.' };
-        }
-        
-        const agora = Date.now();
-        const expiracao = agora + (diasValidade * 24 * 60 * 60 * 1000); // Adiciona os dias em milissegundos
-        
-        // Registra o código para o usuário atual ANTES de ativar
-        registrarCodigo(codigoLimpo);
-        
-        localStorage.setItem(STORAGE_KEY_CODIGO_ATIVO, codigoLimpo);
-        localStorage.setItem(STORAGE_KEY_CODIGO_EXPIRACAO, expiracao.toString());
-        
-        return { sucesso: true, dias: diasValidade, ilimitado: false };
-    }
-    
-    return { sucesso: false, motivo: 'Código inválido' };
-}
-
-/**
- * Verifica se o usuário pode gerar a quantidade especificada de jogos
- * @param {number} quantidade - Quantidade de jogos a gerar (padrão: 1)
- */
-function podeGerar(quantidade = 1) {
-    // Se o código está ativo, permite gerar sem limite
-    if (isCodigoAtivo()) {
-        return true;
-    }
-    
-    const dados = obterContadorGerações();
-    return (dados.contador + quantidade) <= MAX_GERACOES_POR_DIA;
-}
-
-/**
- * Calcula o tempo restante até liberar novamente (em horas e minutos)
- */
-function calcularTempoRestante() {
-    const dados = obterContadorGerações();
-    
-    if (dados.timestamp === null || passou24Horas(dados.timestamp)) {
-        return null; // Já pode usar
-    }
-
-    const agora = Date.now();
-    const diferenca = dados.timestamp - agora + (24 * 60 * 60 * 1000); // Tempo restante
-    const horas = Math.floor(diferenca / (1000 * 60 * 60));
-    const minutos = Math.floor((diferenca % (1000 * 60 * 60)) / (1000 * 60));
-
-    return { horas, minutos };
-}
-
-/**
- * Atualiza a exibição do limite de gerações
- */
-function atualizarExibicaoLimite() {
-    if (!limiteContainer) return;
-
-    // Se o código está ativo, oculta o limite e libera tudo
-    if (isCodigoAtivo()) {
-        limiteContainer.classList.add('hidden');
-        btnGerar.disabled = false;
-        btnGerar.classList.remove('btn-bloqueado');
-        btnGerar.querySelector('.btn-text').textContent = 'Gerar Jogos';
-        return;
-    }
-
-    const dados = obterContadorGerações();
-    const restantes = MAX_GERACOES_POR_DIA - dados.contador;
-
-    if (dados.contador === 0) {
-        limiteContainer.classList.add('hidden');
-        return;
-    }
-
-    limiteContainer.classList.remove('hidden');
-    const contadorSpan = limiteContainer.querySelector('.limite-contador');
-    const tempoSpan = limiteContainer.querySelector('.limite-tempo');
-
-    if (contadorSpan) {
-        contadorSpan.textContent = `${dados.contador} de ${MAX_GERACOES_POR_DIA}`;
-    }
-
-    if (restantes === 0) {
-        // Bloqueado
-        limiteContainer.className = 'limite-container limite-bloqueado';
-        const tempoRestante = calcularTempoRestante();
-        if (tempoRestante && tempoSpan) {
-            tempoSpan.textContent = `Libera em: ${tempoRestante.horas}h ${tempoRestante.minutos}min`;
-        }
-        // Atualiza o botão - bloqueado
-        btnGerar.disabled = true;
-        btnGerar.classList.add('btn-bloqueado');
-        btnGerar.querySelector('.btn-text').textContent = 'Limite Atingido';
-    } else {
-        // Ainda pode usar
-        limiteContainer.className = 'limite-container limite-ativo';
-        if (tempoSpan) {
-            tempoSpan.textContent = '';
-        }
-        // Atualiza o botão - liberado
-        btnGerar.disabled = false;
-        btnGerar.classList.remove('btn-bloqueado');
-        btnGerar.querySelector('.btn-text').textContent = 'Gerar Jogos';
-    }
-}
-
-/**
- * Atualiza a exibição do status do código de ativação
- */
-function atualizarStatusCodigo() {
-    const codigoInput = document.getElementById('codigoAtivacao');
-    const codigoStatus = document.getElementById('codigoStatus');
-    const btnAtivar = document.getElementById('btnAtivar');
-    const codigoContainer = document.getElementById('codigoAtivacaoContainer');
-    
-    if (!codigoInput || !codigoStatus || !btnAtivar || !codigoContainer) return;
-    
-    if (isCodigoAtivo()) {
-        const diasRestantes = getDiasRestantes();
-        const expiracaoFormatada = getCodigoExpiracaoFormatada();
-        
-        // Se for código ilimitado
-        if (diasRestantes === -1) {
-            codigoStatus.textContent = `✅ Código pessoal ativo - Jogos ilimitados permanentemente!`;
-        } else if (diasRestantes > 0 && expiracaoFormatada) {
-            codigoStatus.textContent = `✅ Código ativo - Jogos ilimitados! Expira em ${diasRestantes} dia(s) (${expiracaoFormatada})`;
-        } else if (expiracaoFormatada) {
-            codigoStatus.textContent = `✅ Código ativo - Jogos ilimitados! Expira em ${expiracaoFormatada}`;
-        } else {
-            codigoStatus.textContent = `✅ Código ativo - Jogos ilimitados!`;
-        }
-        
-        codigoStatus.className = 'codigo-status codigo-ativo';
-        codigoInput.disabled = true;
-        codigoInput.value = 'Código Ativo';
-        codigoInput.style.display = 'none';
-        btnAtivar.style.display = 'none';
-    } else {
-        codigoStatus.textContent = '';
-        codigoStatus.className = 'codigo-status hidden';
-        codigoInput.disabled = false;
-        codigoInput.style.display = 'block';
-        btnAtivar.style.display = 'block';
-        if (codigoInput.value === 'Código Ativo') {
-            codigoInput.value = '';
-        }
-        btnAtivar.textContent = 'Ativar';
-        btnAtivar.classList.remove('btn-desativar');
-    }
-}
-
-/**
- * Exibe mensagem de erro
- */
-function exibirErro(mensagem) {
-    errorMessage.textContent = mensagem;
-    errorMessage.classList.remove('hidden');
-    
-    // Oculta o erro após 5 segundos
-    setTimeout(() => {
-        errorMessage.classList.add('hidden');
-    }, 5000);
-}
-
-/**
- * Manipula o envio do formulário
- */
-form.addEventListener('submit', (e) => {
+// Manipula envio do formulário
+form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
     
-    // Verifica se está em modo anônimo - bloqueia imediatamente
-    if (isModoAnonimo()) {
-        bloquearBotaoAnonimo();
-        exibirErro('⚠️ Este aplicativo não funciona em janela anônima/privada. Por favor, use uma janela normal do navegador para utilizar o aplicativo.');
-        
-        // Bloqueia o formulário completamente
-        const inputs = document.querySelectorAll('#sorteioForm input, #sorteioForm select, #sorteioForm button');
-        inputs.forEach(input => {
-            input.disabled = true;
-        });
-        
-        return false;
-    }
-    
-    // Obtém a quantidade de jogos a gerar ANTES de verificar o limite
-    const quantidadeJogos = parseInt(
-        document.getElementById('quantidadeJogos').value,
-        10
-    );
-    
-    // Verifica se pode gerar a quantidade solicitada
-    if (!podeGerar(quantidadeJogos)) {
-        const dados = obterContadorGerações();
-        const disponivel = MAX_GERACOES_POR_DIA - dados.contador;
-        const tempoRestante = calcularTempoRestante();
-        
-        if (dados.contador >= MAX_GERACOES_POR_DIA) {
-            if (tempoRestante) {
-                exibirErro(`Limite diário atingido! Você já gerou ${MAX_GERACOES_POR_DIA} jogos hoje. Tente novamente em ${tempoRestante.horas}h ${tempoRestante.minutos}min.`);
-            } else {
-                exibirErro(`Limite diário atingido! Você já gerou ${MAX_GERACOES_POR_DIA} jogos hoje.`);
-            }
-        } else {
-            exibirErro(`Você só pode gerar mais ${disponivel} jogo(s) hoje. Tente gerar ${disponivel} jogo(s) ou aguarde 24 horas.`);
-        }
+    // Verifica se o botão está desabilitado (não deve processar se estiver)
+    if (btnGerar.disabled) {
+        console.warn('Tentativa de envio com botão desabilitado');
         return;
     }
     
-    // Oculta mensagens anteriores
     errorMessage.classList.add('hidden');
     resultadoContainer.classList.add('hidden');
     estatisticasContainer.classList.add('hidden');
     
-    // Desabilita o botão durante o processamento
+    const btnText = btnGerar.querySelector('.btn-text');
     btnGerar.disabled = true;
-    btnGerar.querySelector('.btn-text').textContent = 'Processando...';
-
+    if (btnText) {
+        btnText.textContent = 'Processando...';
+    }
+    
     try {
-        // Pequeno delay para melhorar UX
-        setTimeout(() => {
-            try {
-                const tresSorteios = lerTresSorteios();
-                const resultadoAtual = parseSorteio(
-                    document.getElementById('resultadoAtual').value,
-                    'Resultado do Jogo Atual'
-                );
-                
-                // Obtém modo de geração
-                const modo = obterModoGeracao();
-                
-                // Gera múltiplos jogos
-                const listaJogos = [];
-                for (let i = 0; i < quantidadeJogos; i++) {
-                    const jogo = realizarSorteioComBaseNosTresSorteios(
-                        tresSorteios,
-                        resultadoAtual,
-                        modo
-                    );
-                    listaJogos.push(jogo);
-                }
-                
-                // Incrementa contador pela quantidade de jogos gerados (apenas se código não estiver ativo)
-                if (!isCodigoAtivo()) {
-                    incrementarContador(quantidadeJogos);
-                }
-                
-                exibirJogos(listaJogos);
-                exibirEstatisticas(tresSorteios);
-                
-                // Atualiza exibição do limite após incrementar (isso já desabilita o botão se necessário)
-                atualizarExibicaoLimite();
-            } catch (error) {
-                exibirErro(error.message);
-                // Se deu erro, verifica se ainda pode gerar para reabilitar o botão
-                if (podeGerar()) {
-                    btnGerar.disabled = false;
-                    btnGerar.querySelector('.btn-text').textContent = 'Gerar Jogos';
-                    btnGerar.classList.remove('btn-bloqueado');
-                } else {
-                    // Se atingiu o limite, atualiza a exibição corretamente
-                    atualizarExibicaoLimite();
-                }
+        console.log('=== INICIANDO GERAÇÃO DE JOGOS ===');
+        
+        // Valida e parseia os sorteios
+        let sorteio1, sorteio2, sorteio3, resultadoAtual;
+        try {
+            const campo1 = document.getElementById('sorteio1');
+            const campo2 = document.getElementById('sorteio2');
+            const campo3 = document.getElementById('sorteio3');
+            const campo4 = document.getElementById('resultadoAtual');
+            
+            if (!campo1 || !campo2 || !campo3 || !campo4) {
+                throw new Error('Campos do formulário não encontrados. Recarregue a página.');
             }
-        }, 300);
-    } catch (error) {
-        exibirErro(error.message);
-        // Se deu erro, verifica se ainda pode gerar para reabilitar o botão
-        if (podeGerar()) {
-            btnGerar.disabled = false;
-            btnGerar.querySelector('.btn-text').textContent = 'Gerar Jogos';
-            btnGerar.classList.remove('btn-bloqueado');
+            
+            console.log('Validando campos...');
+            sorteio1 = parseSorteio(campo1.value, 'Sorteio 1');
+            sorteio2 = parseSorteio(campo2.value, 'Sorteio 2');
+            sorteio3 = parseSorteio(campo3.value, 'Sorteio 3');
+            resultadoAtual = parseSorteio(campo4.value, 'Resultado do Jogo Atual');
+            
+            console.log('✓ Campos validados:', {
+                sorteio1: sorteio1.length,
+                sorteio2: sorteio2.length,
+                sorteio3: sorteio3.length,
+                resultadoAtual: resultadoAtual.length
+            });
+        } catch (parseError) {
+            console.error('Erro ao validar campos:', parseError);
+            exibirErro(parseError.message || 'Erro ao validar os campos. Verifique se todos os campos estão preenchidos corretamente com 15 números cada.');
+            throw parseError;
+        }
+        
+        const modoGeracao = document.getElementById('modoGeracao')?.value || 'balanceado';
+        const quantidadeJogos = parseInt(document.getElementById('quantidadeJogos')?.value || '1', 10);
+        
+        const dadosEnviar = {
+            sorteio1,
+            sorteio2,
+            sorteio3,
+            resultadoAtual,
+            modoGeracao,
+            quantidadeJogos,
+            numerosExcluir: Array.from(numerosExcluir),
+            numerosIncluir: Array.from(numerosIncluir)
+        };
+        
+        console.log('Enviando requisição para /api/gerar...');
+        console.log('Dados:', {
+            ...dadosEnviar,
+            sorteio1: `[${sorteio1.length} números]`,
+            sorteio2: `[${sorteio2.length} números]`,
+            sorteio3: `[${sorteio3.length} números]`,
+            resultadoAtual: `[${resultadoAtual.length} números]`
+        });
+        
+        const resultado = await apiRequest('/api/gerar', 'POST', dadosEnviar);
+        
+        console.log('✓ Resposta recebida:', resultado);
+        
+        if (resultado && resultado.sucesso) {
+            console.log('✓ Jogos gerados com sucesso:', resultado.jogos?.length || 0, 'jogo(s)');
+            if (resultado.jogos && resultado.jogos.length > 0) {
+                exibirJogos(resultado.jogos);
+                if (resultado.estatisticas) {
+                    exibirEstatisticas(resultado.estatisticas);
+                }
+                atualizarExibicaoLimite({
+                    contador: resultado.contador || 0,
+                    maxGeracoes: resultado.maxGeracoes || 3,
+                    codigoAtivo: resultado.codigoAtivo || false
+                });
+            } else {
+                throw new Error('Nenhum jogo foi gerado. Tente novamente.');
+            }
         } else {
-            // Se atingiu o limite, atualiza a exibição corretamente
-            atualizarExibicaoLimite();
+            const mensagemErro = resultado?.mensagem || resultado?.erro || 'Erro desconhecido ao gerar jogos';
+            console.error('✗ Resposta sem sucesso:', resultado);
+            
+            // Trata erros específicos de bloqueio
+            if (resultado?.erro === 'LIMITE_ATINGIDO') {
+                exibirErro(mensagemErro);
+                // Atualiza a exibição do limite com os dados do erro
+                atualizarExibicaoLimite({
+                    contador: resultado.contador || 0,
+                    maxGeracoes: resultado.maxGeracoes || 3,
+                    codigoAtivo: false,
+                    tempoRestante: resultado.tempoRestante || 0,
+                    podeGerar: false
+                });
+            } else if (resultado?.erro === 'MODO_ANONIMO') {
+                exibirErro(mensagemErro);
+                bloquearAplicacao();
+            } else {
+                exibirErro(mensagemErro);
+            }
+        }
+    } catch (error) {
+        console.error('✗ ERRO AO GERAR JOGOS:', error);
+        console.error('Tipo do erro:', error.constructor.name);
+        console.error('Mensagem:', error.message);
+        console.error('Stack:', error.stack);
+        
+        let mensagemErro = 'Erro desconhecido ao gerar jogos';
+        
+        if (error.message) {
+            mensagemErro = error.message;
+        } else if (error.toString && error.toString() !== '[object Object]') {
+            mensagemErro = error.toString();
+        }
+        
+        // Trata erros específicos
+        if (mensagemErro.includes('MODO_ANONIMO')) {
+            bloquearAplicacao();
+        } else if (mensagemErro.includes('fetch') || mensagemErro.includes('conexão') || mensagemErro.includes('conexao')) {
+            mensagemErro = 'Erro de conexão com o servidor. Verifique se o servidor está rodando em http://localhost:3000. Execute "npm start" no terminal.';
+        } else if (mensagemErro.includes('Tempo de espera')) {
+            mensagemErro = 'O servidor está demorando muito para responder. Tente novamente.';
+        }
+        
+        exibirErro(mensagemErro);
+    } finally {
+        // Sempre restaura o botão e verifica o status
+        try {
+            await verificarStatus();
+        } catch (error) {
+            console.error('Erro ao verificar status no finally:', error);
+            // Em caso de erro, pelo menos restaura o botão
+            if (btnText && btnText.textContent === 'Processando...') {
+                btnText.textContent = 'Gerar Jogos';
+            }
+            btnGerar.disabled = false;
+            btnGerar.classList.remove('btn-bloqueado');
         }
     }
 });
 
-// ========== FUNÇÕES DE INICIALIZAÇÃO ==========
-
-/**
- * Inicializa seletores numéricos para cada campo
- */
-function inicializarSeletoresNumericos() {
-    document.querySelectorAll('.seletor-numeros').forEach(container => {
-        const targetId = container.dataset.target;
-        const grid = document.createElement('div');
-        grid.className = 'numeros-seletor-grid';
-        
-        for (let i = 1; i <= 25; i++) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'btn-numero-seletor';
-            btn.textContent = i;
-            btn.setAttribute('data-numero', i);
-            btn.setAttribute('aria-label', `Selecionar número ${i}`);
-            
-            btn.addEventListener('click', () => {
-                const input = document.getElementById(targetId);
-                const valores = input.value.split(',').map(v => v.trim()).filter(v => v);
-                
-                if (valores.includes(i.toString())) {
-                    // Remove se já existe
-                    valores.splice(valores.indexOf(i.toString()), 1);
-                } else {
-                    // Adiciona se não existe e tem espaço
-                    if (valores.length < 15) {
-                        valores.push(i.toString());
-                    }
-                }
-                
-                input.value = valores.join(', ');
-                input.dispatchEvent(new Event('input'));
-                atualizarContador(targetId);
-            });
-            
-            grid.appendChild(btn);
-        }
-        
-        container.appendChild(grid);
-    });
-}
-
-/**
- * Atualiza contador visual de números em um campo (ex: 0/15, 5/15, etc.)
- * IMPORTANTE: Esta função NÃO afeta o contador de gerações diárias.
- * Ela apenas atualiza a exibição visual de quantos números foram digitados no campo.
- */
+// Função para atualizar contadores (deve estar antes de inicializarTecladosNumericos)
 function atualizarContador(campoId) {
     const input = document.getElementById(campoId);
     if (!input) return;
@@ -1370,21 +639,23 @@ function atualizarContador(campoId) {
     const contador = document.getElementById(contadorId);
     if (!contador) return;
     
-    const valores = input.value.split(',').map(v => v.trim()).filter(v => v && !isNaN(v));
+    const valores = input.value.split(',').map(v => parseInt(v.trim(), 10)).filter(v => !isNaN(v) && v >= 1 && v <= 25);
     const count = valores.length;
     contador.textContent = `${count}/15`;
     
-    // Atualiza cores dos botões do seletor
     const seletor = input.parentElement.querySelector('.seletor-numeros');
     if (seletor) {
         seletor.querySelectorAll('.btn-numero-seletor').forEach(btn => {
-            const num = parseInt(btn.dataset.numero);
-            if (valores.includes(num.toString())) {
+            const num = parseInt(btn.dataset.numero, 10);
+            const isSelecionado = valores.includes(num);
+            
+            if (isSelecionado) {
                 btn.classList.add('selecionado');
             } else {
                 btn.classList.remove('selecionado');
             }
-            if (count >= 15 && !valores.includes(num.toString())) {
+            
+            if (count >= 15 && !isSelecionado) {
                 btn.disabled = true;
             } else {
                 btn.disabled = false;
@@ -1392,7 +663,6 @@ function atualizarContador(campoId) {
         });
     }
     
-    // Atualiza cor do contador
     if (count === 15) {
         contador.classList.add('completo');
     } else {
@@ -1400,10 +670,196 @@ function atualizarContador(campoId) {
     }
 }
 
-/**
- * Inicializa filtros de números (excluir/incluir)
- */
-function inicializarFiltrosNumeros() {
+// Inicialização dos teclados numéricos (função independente)
+function inicializarTecladosNumericos() {
+    document.querySelectorAll('.seletor-numeros').forEach(container => {
+        // Limpa o container primeiro para evitar duplicatas
+        container.innerHTML = '';
+        
+        const targetId = container.dataset.target;
+        if (!targetId) return;
+        
+        // Cria título do teclado numérico
+        const titulo = document.createElement('div');
+        titulo.className = 'teclado-numerico-titulo';
+        titulo.innerHTML = '<span>🔢 Clique nos números para selecionar</span>';
+        container.appendChild(titulo);
+        
+        // Cria grid do teclado numérico
+        const grid = document.createElement('div');
+        grid.className = 'numeros-seletor-grid';
+        
+        // Cria 25 botões (números de 1 a 25)
+        for (let i = 1; i <= 25; i++) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-numero-seletor';
+            btn.textContent = i.toString().padStart(2, '0');
+            btn.setAttribute('data-numero', i);
+            btn.setAttribute('aria-label', `Selecionar número ${i}`);
+            btn.title = `Clique para ${container.dataset.target === 'resultadoAtual' ? 'adicionar' : 'selecionar'} o número ${i}`;
+            
+            btn.addEventListener('click', () => {
+                const input = document.getElementById(targetId);
+                if (!input) return;
+                
+                // Obtém valores atuais do campo
+                let valores = input.value.split(',')
+                    .map(v => parseInt(v.trim(), 10))
+                    .filter(v => !isNaN(v) && v >= 1 && v <= 25);
+                
+                const numero = i;
+                const index = valores.indexOf(numero);
+                
+                if (index !== -1) {
+                    // Remove o número se já estiver selecionado
+                    valores.splice(index, 1);
+                } else {
+                    // Adiciona o número se ainda não estiver selecionado e não tiver atingido o limite
+                    if (valores.length < 15) {
+                        valores.push(numero);
+                        // Ordena os números numericamente
+                        valores.sort((a, b) => a - b);
+                    } else {
+                        // Feedback quando o limite é atingido
+                        btn.style.animation = 'pulse 0.3s ease';
+                        setTimeout(() => {
+                            btn.style.animation = '';
+                        }, 300);
+                        return;
+                    }
+                }
+                
+                // Atualiza o campo de entrada
+                input.value = valores.join(', ');
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                // Foca no campo para mostrar a atualização
+                input.focus();
+                
+                // Atualiza o contador e estados visuais
+                atualizarContador(targetId);
+            });
+            
+            grid.appendChild(btn);
+        }
+        
+        container.appendChild(grid);
+    });
+}
+
+// Função para verificar se o servidor está acessível
+async function verificarServidor() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 segundos de timeout
+        
+        const url = API_BASE + '/api/status';
+        console.log('[Verificação] Testando servidor em:', url);
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'include',
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        const isOk = response.ok;
+        console.log('[Verificação] Servidor', isOk ? 'acessível ✓' : 'não acessível ✗');
+        return isOk;
+    } catch (error) {
+        console.warn('[Verificação] Servidor não está acessível:', error.message);
+        return false;
+    }
+}
+
+// Inicialização
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('=== INICIALIZANDO APLICAÇÃO ===');
+    
+    // Verifica se o servidor está acessível
+    const servidorOk = await verificarServidor();
+    if (!servidorOk) {
+        console.warn('⚠️ Servidor não está acessível. Certifique-se de que o servidor está rodando.');
+        exibirErro('⚠️ Servidor não está acessível. Por favor, inicie o servidor executando "npm start" no terminal antes de usar a aplicação.');
+        // Ainda permite usar a interface, mas o usuário verá o erro ao tentar gerar
+    }
+    
+    // Inicializa teclados numéricos primeiro (sempre deve funcionar)
+    inicializarTecladosNumericos();
+    
+    // Verifica status inicial
+    const statusOk = await verificarStatus();
+    if (!statusOk) {
+        console.warn('Status não OK, mas continuando...');
+        // Não retorna, permite que o usuário veja a interface
+    }
+    
+    // Garante que o botão está habilitado após verificar status (se não estiver bloqueado)
+    if (btnGerar && !btnGerar.classList.contains('btn-bloqueado')) {
+        btnGerar.disabled = false;
+        const btnText = btnGerar.querySelector('.btn-text');
+        if (btnText && btnText.textContent !== 'Limite Atingido' && btnText.textContent !== 'Janela Anônima Não Suportada') {
+            btnText.textContent = 'Gerar Jogos';
+        }
+    }
+    
+    console.log('✓ Aplicação inicializada');
+    
+    // Inicializa tema
+    const temaSalvo = localStorage.getItem('lotoFacil_tema') || 'light';
+    document.body.className = `theme-${temaSalvo}`;
+    
+    const toggleBtn = document.getElementById('toggleTheme');
+    if (toggleBtn) {
+        const icon = toggleBtn.querySelector('.theme-icon');
+        icon.textContent = temaSalvo === 'light' ? '🌙' : '☀️';
+        
+        toggleBtn.addEventListener('click', () => {
+            const temaAtual = document.body.classList.contains('theme-light') ? 'light' : 'dark';
+            const novoTema = temaAtual === 'light' ? 'dark' : 'light';
+            document.body.className = `theme-${novoTema}`;
+            localStorage.setItem('lotoFacil_tema', novoTema);
+            icon.textContent = novoTema === 'light' ? '🌙' : '☀️';
+        });
+    }
+    
+    // Garante que os teclados estão atualizados após carregar o tema
+    inicializarTecladosNumericos();
+    
+    // Atualiza contadores inicialmente e adiciona listeners
+    ['sorteio1', 'sorteio2', 'sorteio3', 'resultadoAtual'].forEach(campoId => {
+        const input = document.getElementById(campoId);
+        if (input) {
+            input.addEventListener('input', () => atualizarContador(campoId));
+            atualizarContador(campoId);
+        }
+    });
+    
+    // Botões de limpar campo
+    document.querySelectorAll('.btn-limpar-campo').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const campoId = btn.dataset.campo;
+            const input = document.getElementById(campoId);
+            if (input) {
+                input.value = '';
+                atualizarContador(campoId);
+            }
+        });
+    });
+    
+    // Opções avançadas
+    const toggleAvancado = document.getElementById('toggleAvancado');
+    const opcoesAvancadas = document.getElementById('opcoesAvancadas');
+    if (toggleAvancado && opcoesAvancadas) {
+        toggleAvancado.addEventListener('click', () => {
+            const isHidden = opcoesAvancadas.classList.contains('hidden');
+            opcoesAvancadas.classList.toggle('hidden', !isHidden);
+            toggleAvancado.querySelector('span:first-child').textContent = isHidden ? 'Ocultar' : 'Mostrar';
+        });
+    }
+    
+    // Inicializa filtros
     const containerExcluir = document.getElementById('numerosExcluir');
     const containerIncluir = document.getElementById('numerosIncluir');
     
@@ -1422,11 +878,8 @@ function inicializarFiltrosNumeros() {
             btn.addEventListener('click', () => {
                 const outroSet = isExcluir ? numerosIncluir : numerosExcluir;
                 const num = parseInt(btn.dataset.numero);
-                
-                // Remove do outro conjunto se estiver lá
                 outroSet.delete(num);
                 
-                // Toggle no conjunto atual
                 if (numerosSet.has(num)) {
                     numerosSet.delete(num);
                     btn.classList.remove('ativo');
@@ -1434,317 +887,47 @@ function inicializarFiltrosNumeros() {
                     numerosSet.add(num);
                     btn.classList.add('ativo');
                 }
-                
-                // Salva no localStorage
-                localStorage.setItem(
-                    isExcluir ? STORAGE_KEY_NUMEROS_EXCLUIR : STORAGE_KEY_NUMEROS_INCLUIR,
-                    JSON.stringify(Array.from(numerosSet))
-                );
             });
             
             container.appendChild(btn);
         }
     });
-}
-
-/**
- * Inicializa tema claro/escuro
- */
-function inicializarTema() {
-    const temaSalvo = localStorage.getItem(STORAGE_KEY_TEMA) || 'light';
-    document.body.className = `theme-${temaSalvo}`;
     
-    const toggleBtn = document.getElementById('toggleTheme');
-    if (toggleBtn) {
-        const icon = toggleBtn.querySelector('.theme-icon');
-        icon.textContent = temaSalvo === 'light' ? '🌙' : '☀️';
-        
-        toggleBtn.addEventListener('click', () => {
-            const temaAtual = document.body.classList.contains('theme-light') ? 'light' : 'dark';
-            const novoTema = temaAtual === 'light' ? 'dark' : 'light';
-            
-            document.body.className = `theme-${novoTema}`;
-            localStorage.setItem(STORAGE_KEY_TEMA, novoTema);
-            icon.textContent = novoTema === 'light' ? '🌙' : '☀️';
-        });
-    }
-}
-
-/**
- * Inicializa histórico
- */
-function exibirHistorico() {
-    const historico = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORICO) || '[]');
-    const container = document.getElementById('historicoLista');
-    if (!container) return;
-    
-    if (historico.length === 0) {
-        container.innerHTML = '<p class="historico-vazio">Nenhum jogo gerado ainda.</p>';
-        return;
-    }
-    
-    container.innerHTML = historico.map((item, index) => {
-        const data = new Date(item.data);
-        return `
-            <div class="historico-item">
-                <div class="historico-header">
-                    <strong>${data.toLocaleString('pt-BR')}</strong>
-                    <span class="historico-modo">Modo: ${item.modo}</span>
-                </div>
-                ${item.jogos.map((jogo, jIndex) => `
-                    <div class="historico-jogo">
-                        <span class="historico-jogo-title">Jogo ${jIndex + 1}:</span>
-                        <div class="historico-numeros">
-                            ${jogo.map(n => `<span class="historico-numero">${n}</span>`).join('')}
-                        </div>
-                        <button class="btn-copiar-historico" data-numeros="${jogo.join(',')}">📋 Copiar</button>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    }).join('');
-    
-    // Event listeners para copiar
-    container.querySelectorAll('.btn-copiar-historico').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const numeros = btn.dataset.numeros.split(',').map(n => n.trim());
-            const sucesso = await copiarNumeros(numeros);
-            if (sucesso) {
-                btn.textContent = '✓ Copiado!';
-                setTimeout(() => {
-                    btn.textContent = '📋 Copiar';
-                }, 2000);
-            }
-        });
-    });
-}
-
-/**
- * Exporta jogos como PDF
- */
-async function exportarPDF() {
-    const elemento = document.getElementById('jogosGerados');
-    if (!elemento) return;
-    
-    const opt = {
-        margin: 1,
-        filename: `loto-facil-${new Date().toISOString().split('T')[0]}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-    };
-    
-    if (typeof html2pdf !== 'undefined') {
-        await html2pdf().set(opt).from(elemento).save();
-    }
-}
-
-/**
- * Exporta jogos como imagem
- */
-async function exportarImagem() {
-    const elemento = document.getElementById('jogosGerados');
-    if (!elemento) return;
-    
-    if (typeof html2canvas !== 'undefined') {
-        const canvas = await html2canvas(elemento);
-        const imgData = canvas.toDataURL('image/png');
-        
-        const link = document.createElement('a');
-        link.download = `loto-facil-${new Date().toISOString().split('T')[0]}.png`;
-        link.href = imgData;
-        link.click();
-    }
-}
-
-/**
- * Exibe dashboard de uso
- */
-function exibirDashboard() {
-    const dados = obterContadorGerações();
-    const historico = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORICO) || '[]');
-    const tempoRestante = calcularTempoRestante();
-    
-    const container = document.getElementById('dashboardContent');
-    if (!container) return;
-    
-    const totalJogosGerados = historico.reduce((sum, item) => sum + item.jogos.length, 0);
-    const restantes = MAX_GERACOES_POR_DIA - dados.contador;
-    
-    container.innerHTML = `
-        <div class="dashboard-grid">
-            <div class="dashboard-card">
-                <h3>📊 Uso Hoje</h3>
-                <div class="dashboard-value">${dados.contador} / ${MAX_GERACOES_POR_DIA}</div>
-                <div class="dashboard-progress">
-                    <div class="dashboard-progress-bar" style="width: ${(dados.contador / MAX_GERACOES_POR_DIA) * 100}%"></div>
-                </div>
-                ${restantes === 0 && tempoRestante ? 
-                    `<p class="dashboard-info">⏱️ Libera em: ${tempoRestante.horas}h ${tempoRestante.minutos}min</p>` :
-                    `<p class="dashboard-info">✅ ${restantes} gerações restantes hoje</p>`
-                }
-            </div>
-            
-            <div class="dashboard-card">
-                <h3>📋 Total de Jogos</h3>
-                <div class="dashboard-value">${totalJogosGerados}</div>
-                <p class="dashboard-info">Jogos gerados no histórico</p>
-            </div>
-            
-            <div class="dashboard-card">
-                <h3>📅 Histórico</h3>
-                <div class="dashboard-value">${historico.length}</div>
-                <p class="dashboard-info">Registros salvos</p>
-            </div>
-        </div>
-    `;
-}
-
-// Função para bloquear botão de forma permanente em modo anônimo
-function bloquearBotaoAnonimo() {
-    if (!btnGerar) return;
-    
-    // Força o botão a ficar desabilitado
-    btnGerar.disabled = true;
-    btnGerar.setAttribute('disabled', 'disabled');
-    btnGerar.classList.add('btn-bloqueado');
-    btnGerar.style.pointerEvents = 'none';
-    btnGerar.style.opacity = '0.6';
-    btnGerar.style.cursor = 'not-allowed';
-    
-    const btnText = btnGerar.querySelector('.btn-text');
-    if (btnText) {
-        btnText.textContent = 'Janela Anônima Não Suportada';
-    }
-    
-    // Intercepta tentativas de habilitar
-    Object.defineProperty(btnGerar, 'disabled', {
-        get: function() { return true; },
-        set: function() { return; },
-        configurable: false
-    });
-}
-
-// Inicializa a exibição do limite ao carregar a página
-document.addEventListener('DOMContentLoaded', () => {
-    // Verifica se está em modo anônimo e bloqueia o botão
-    const modoAnonimo = isModoAnonimo();
-    
-    if (modoAnonimo) {
-        // Bloqueia o botão de forma permanente
-        bloquearBotaoAnonimo();
-        
-        // Exibe mensagem de erro
-        exibirErro('⚠️ Este aplicativo não funciona em janela anônima/privada. Por favor, use uma janela normal do navegador para utilizar o aplicativo.');
-        
-        // Oculta o campo de código de ativação também
-        const codigoContainer = document.getElementById('codigoAtivacaoContainer');
-        if (codigoContainer) {
-            codigoContainer.style.display = 'none';
-        }
-        
-        // Bloqueia todos os campos do formulário
-        const inputs = document.querySelectorAll('#sorteioForm input, #sorteioForm select, #sorteioForm button[type="submit"]');
-        inputs.forEach(input => {
-            if (input.id !== 'btnGerar') {
-                input.disabled = true;
-            }
-        });
-        
-        // Verificações periódicas para garantir que o botão permaneça bloqueado
-        setInterval(() => {
-            if (isModoAnonimo()) {
-                bloquearBotaoAnonimo();
-            }
-        }, 500);
-        
-        // Usa MutationObserver para detectar tentativas de habilitar o botão
-        if (btnGerar) {
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    if (mutation.type === 'attributes' && mutation.attributeName === 'disabled') {
-                        if (!btnGerar.disabled && isModoAnonimo()) {
-                            bloquearBotaoAnonimo();
-                        }
-                    }
-                });
-            });
-            
-            observer.observe(btnGerar, {
-                attributes: true,
-                attributeFilter: ['disabled', 'class']
-            });
-        }
-        
-        // Não inicializa o resto se estiver em modo anônimo
-        return;
-    }
-    
-    // Inicializações básicas
-    atualizarExibicaoLimite();
-    atualizarStatusCodigo();
-    inicializarTema();
-    inicializarSeletoresNumericos();
-    inicializarFiltrosNumeros();
-    
-    // Atualiza contadores dos campos existentes
-    ['sorteio1', 'sorteio2', 'sorteio3', 'resultadoAtual'].forEach(campoId => {
-        const input = document.getElementById(campoId);
-        if (input) {
-            input.addEventListener('input', () => atualizarContador(campoId));
-            atualizarContador(campoId);
-        }
-    });
-    
-    // Botões de limpar campo
-    // IMPORTANTE: Esta função apenas limpa os valores dos campos do formulário.
-    // Ela NÃO afeta o contador de gerações (STORAGE_KEY_CONTADOR), que é mantido no localStorage
-    // e só é resetado após 24 horas. O botão "Limpar Dados" também NÃO reseta o contador.
-    document.querySelectorAll('.btn-limpar-campo').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const campoId = btn.dataset.campo;
-            const input = document.getElementById(campoId);
-            if (input) {
-                input.value = '';
-                atualizarContador(campoId); // Atualiza apenas o contador visual do campo (ex: 0/15)
-            }
-        });
-    });
-    
-    // Toggle opções avançadas
-    const toggleAvancado = document.getElementById('toggleAvancado');
-    const opcoesAvancadas = document.getElementById('opcoesAvancadas');
-    if (toggleAvancado && opcoesAvancadas) {
-        toggleAvancado.addEventListener('click', () => {
-            const isHidden = opcoesAvancadas.classList.contains('hidden');
-            opcoesAvancadas.classList.toggle('hidden', !isHidden);
-            toggleAvancado.querySelector('span:first-child').textContent = isHidden ? 'Ocultar' : 'Mostrar';
-            toggleAvancado.setAttribute('aria-expanded', isHidden);
-        });
-    }
-    
-    // Limpar filtros
     const btnLimparFiltros = document.getElementById('limparFiltros');
     if (btnLimparFiltros) {
         btnLimparFiltros.addEventListener('click', () => {
             numerosExcluir.clear();
             numerosIncluir.clear();
-            localStorage.removeItem(STORAGE_KEY_NUMEROS_EXCLUIR);
-            localStorage.removeItem(STORAGE_KEY_NUMEROS_INCLUIR);
-            inicializarFiltrosNumeros();
+            containerExcluir.querySelectorAll('.btn-numero-filtro').forEach(btn => btn.classList.remove('ativo'));
+            containerIncluir.querySelectorAll('.btn-numero-filtro').forEach(btn => btn.classList.remove('ativo'));
         });
     }
     
-    // Exportar PDF
-    const btnExportarPDF = document.getElementById('exportarPDF');
-    if (btnExportarPDF) {
-        btnExportarPDF.addEventListener('click', exportarPDF);
-    }
-    
-    // Exportar Imagem
-    const btnExportarImagem = document.getElementById('exportarImagem');
-    if (btnExportarImagem) {
-        btnExportarImagem.addEventListener('click', exportarImagem);
+    // Código de ativação
+    const btnAtivar = document.getElementById('btnAtivar');
+    const codigoInput = document.getElementById('codigoAtivacao');
+    if (btnAtivar && codigoInput) {
+        btnAtivar.addEventListener('click', async () => {
+            const codigo = codigoInput.value;
+            try {
+                const resultado = await apiRequest('/api/ativar-codigo', 'POST', { codigo });
+                if (resultado.sucesso) {
+                    atualizarStatusCodigo(resultado);
+                    await verificarStatus();
+                    let mensagem = '';
+                    if (resultado.ilimitado) {
+                        mensagem = `✅ Código pessoal ativado com sucesso! Jogos ilimitados permanentemente.`;
+                    } else {
+                        mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por ${resultado.dias} dia(s).`;
+                    }
+                    exibirErro(mensagem);
+                    codigoInput.value = '';
+                }
+            } catch (error) {
+                exibirErro(error.message || '❌ Erro ao ativar código.');
+                codigoInput.value = '';
+            }
+        });
     }
     
     // Histórico
@@ -1752,16 +935,98 @@ document.addEventListener('DOMContentLoaded', () => {
     const historicoModal = document.getElementById('historicoModal');
     const fecharHistorico = document.getElementById('fecharHistorico');
     if (btnVerHistorico && historicoModal) {
-        btnVerHistorico.addEventListener('click', () => {
-            exibirHistorico();
-            historicoModal.classList.remove('hidden');
-            historicoModal.setAttribute('aria-hidden', 'false');
+        btnVerHistorico.addEventListener('click', async () => {
+            try {
+                const resultado = await apiRequest('/api/historico');
+                exibirHistorico(resultado.historico || []);
+                historicoModal.classList.remove('hidden');
+            } catch (error) {
+                exibirErro('Erro ao carregar histórico');
+            }
         });
         if (fecharHistorico) {
             fecharHistorico.addEventListener('click', () => {
                 historicoModal.classList.add('hidden');
-                historicoModal.setAttribute('aria-hidden', 'true');
             });
+        }
+    }
+    
+    const btnLimparHistorico = document.getElementById('limparHistorico');
+    if (btnLimparHistorico) {
+        btnLimparHistorico.addEventListener('click', async () => {
+            if (confirm('Tem certeza que deseja limpar todo o histórico?')) {
+                try {
+                    await apiRequest('/api/historico', 'DELETE');
+                    exibirHistorico([]);
+                    exibirErro('Histórico limpo com sucesso');
+                } catch (error) {
+                    exibirErro('Erro ao limpar histórico');
+                }
+            }
+        });
+    }
+    
+    function exibirHistorico(historico) {
+        const container = document.getElementById('historicoLista');
+        if (!container) return;
+        
+        if (historico.length === 0) {
+            container.innerHTML = '<p class="historico-vazio">Nenhum jogo gerado ainda.</p>';
+            return;
+        }
+        
+        container.innerHTML = historico.map((item, index) => {
+            const data = new Date(item.data);
+            return `
+                <div class="historico-item">
+                    <div class="historico-header">
+                        <strong>${data.toLocaleString('pt-BR')}</strong>
+                        <span class="historico-modo">Modo: ${item.modo}</span>
+                    </div>
+                    ${item.jogos.map((jogo, jIndex) => `
+                        <div class="historico-jogo">
+                            <span class="historico-jogo-title">Jogo ${jIndex + 1}:</span>
+                            <div class="historico-numeros">
+                                ${jogo.map(n => `<span class="historico-numero">${n}</span>`).join('')}
+                            </div>
+                            <button class="btn-copiar-historico" data-numeros="${jogo.join(',')}">📋 Copiar</button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }).join('');
+        
+        container.querySelectorAll('.btn-copiar-historico').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const numeros = btn.dataset.numeros.split(',').map(n => n.trim());
+                try {
+                    await navigator.clipboard.writeText(numeros.join(', '));
+                    btn.textContent = '✓ Copiado!';
+                    setTimeout(() => {
+                        btn.textContent = '📋 Copiar';
+                    }, 2000);
+                } catch (err) {
+                    console.error('Erro ao copiar:', err);
+                }
+            });
+        });
+    }
+    
+    function atualizarStatusCodigo(resultado) {
+        const codigoStatus = document.getElementById('codigoStatus');
+        const codigoInput = document.getElementById('codigoAtivacao');
+        const btnAtivar = document.getElementById('btnAtivar');
+        
+        if (resultado && resultado.sucesso) {
+            if (resultado.ilimitado) {
+                codigoStatus.textContent = '✅ Código pessoal ativo - Jogos ilimitados permanentemente!';
+            } else {
+                codigoStatus.textContent = `✅ Código ativo - Jogos ilimitados por ${resultado.dias} dia(s)!`;
+            }
+            codigoStatus.className = 'codigo-status codigo-ativo';
+            codigoStatus.classList.remove('hidden');
+            codigoInput.style.display = 'none';
+            btnAtivar.style.display = 'none';
         }
     }
     
@@ -1770,89 +1035,89 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboardModal = document.getElementById('dashboardModal');
     const fecharDashboard = document.getElementById('fecharDashboard');
     if (btnDashboard && dashboardModal) {
-        btnDashboard.addEventListener('click', () => {
-            exibirDashboard();
-            dashboardModal.classList.remove('hidden');
-            dashboardModal.setAttribute('aria-hidden', 'false');
+        btnDashboard.addEventListener('click', async () => {
+            try {
+                const status = await apiRequest('/api/status');
+                const historicoResult = await apiRequest('/api/historico');
+                const historicoList = historicoResult.historico || [];
+                const totalJogos = historicoList.reduce((sum, item) => sum + item.jogos.length, 0);
+                
+                const container = document.getElementById('dashboardContent');
+                if (container) {
+                    container.innerHTML = `
+                        <div class="dashboard-grid">
+                            <div class="dashboard-card">
+                                <h3>📊 Uso Hoje</h3>
+                                <div class="dashboard-value">${status.contador} / ${status.maxGeracoes}</div>
+                                <div class="dashboard-progress">
+                                    <div class="dashboard-progress-bar" style="width: ${(status.contador / status.maxGeracoes) * 100}%"></div>
+                                </div>
+                                <p class="dashboard-info">✅ ${status.maxGeracoes - status.contador} gerações restantes hoje</p>
+                            </div>
+                            <div class="dashboard-card">
+                                <h3>📋 Total de Jogos</h3>
+                                <div class="dashboard-value">${totalJogos}</div>
+                                <p class="dashboard-info">Jogos gerados no histórico</p>
+                            </div>
+                            <div class="dashboard-card">
+                                <h3>📅 Histórico</h3>
+                                <div class="dashboard-value">${historicoList.length}</div>
+                                <p class="dashboard-info">Registros salvos</p>
+                            </div>
+                        </div>
+                    `;
+                }
+                dashboardModal.classList.remove('hidden');
+            } catch (error) {
+                exibirErro('Erro ao carregar dashboard');
+            }
         });
         if (fecharDashboard) {
             fecharDashboard.addEventListener('click', () => {
                 dashboardModal.classList.add('hidden');
-                dashboardModal.setAttribute('aria-hidden', 'true');
             });
         }
     }
     
-    // Código de ativação
-    const btnAtivar = document.getElementById('btnAtivar');
-    const codigoInput = document.getElementById('codigoAtivacao');
-    if (btnAtivar && codigoInput) {
-        btnAtivar.addEventListener('click', () => {
-            // Tenta ativar o código
-            const codigo = codigoInput.value;
-            const resultado = ativarCodigo(codigo);
+    // Exportar PDF e Imagem (usando bibliotecas externas)
+    const btnExportarPDF = document.getElementById('exportarPDF');
+    if (btnExportarPDF) {
+        btnExportarPDF.addEventListener('click', async () => {
+            const elemento = document.getElementById('jogosGerados');
+            if (!elemento || typeof html2pdf === 'undefined') return;
             
-            if (resultado.sucesso) {
-                atualizarStatusCodigo();
-                atualizarExibicaoLimite();
-                
-                let mensagem = '';
-                if (resultado.ilimitado) {
-                    mensagem = `✅ Código pessoal ativado com sucesso! Jogos ilimitados permanentemente. Este código agora está vinculado ao seu usuário.`;
-                } else if (resultado.dias === 15) {
-                    mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por 15 dias.`;
-                } else if (resultado.dias === 30) {
-                    mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por 30 dias.`;
-                } else if (resultado.dias === 180) {
-                    mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por 6 meses.`;
-                } else if (resultado.dias === 365) {
-                    mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por 1 ano.`;
-                } else {
-                    mensagem = `✅ Código ativado com sucesso! Jogos ilimitados por ${resultado.dias} dia(s).`;
-                }
-                
-                exibirErro(mensagem);
-                setTimeout(() => {
-                    errorMessage.classList.add('hidden');
-                }, 5000);
-                
-                codigoInput.value = '';
-            } else {
-                let mensagemErro = '❌ Código inválido. Verifique e tente novamente.';
-                if (resultado.motivo && resultado.motivo.includes('outro usuário')) {
-                    mensagemErro = `❌ ${resultado.motivo}`;
-                }
-                exibirErro(mensagemErro);
-                codigoInput.value = '';
-                codigoInput.focus();
-            }
-        });
-        
-        // Permite ativar com Enter
-        codigoInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !isCodigoAtivo()) {
-                btnAtivar.click();
-            }
+            const opt = {
+                margin: 1,
+                filename: `loto-facil-${new Date().toISOString().split('T')[0]}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+            
+            await html2pdf().set(opt).from(elemento).save();
         });
     }
     
-    // Limpar histórico
-    const btnLimparHistorico = document.getElementById('limparHistorico');
-    if (btnLimparHistorico) {
-        btnLimparHistorico.addEventListener('click', () => {
-            if (confirm('Tem certeza que deseja limpar todo o histórico?')) {
-                localStorage.removeItem(STORAGE_KEY_HISTORICO);
-                exibirHistorico();
-            }
+    const btnExportarImagem = document.getElementById('exportarImagem');
+    if (btnExportarImagem) {
+        btnExportarImagem.addEventListener('click', async () => {
+            const elemento = document.getElementById('jogosGerados');
+            if (!elemento || typeof html2canvas === 'undefined') return;
+            
+            const canvas = await html2canvas(elemento);
+            const imgData = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `loto-facil-${new Date().toISOString().split('T')[0]}.png`;
+            link.href = imgData;
+            link.click();
         });
     }
     
-    // Limpar campos preenchidos (não limpa contador de gerações)
+    // Limpar dados
     const btnLimparDados = document.getElementById('btnLimparDados');
     if (btnLimparDados) {
         btnLimparDados.addEventListener('click', () => {
-            if (confirm('Tem certeza que deseja limpar todos os campos preenchidos? O contador de gerações será mantido.')) {
-                // Limpa apenas os campos do formulário
+            if (confirm('Tem certeza que deseja limpar todos os campos preenchidos?')) {
                 ['sorteio1', 'sorteio2', 'sorteio3', 'resultadoAtual'].forEach(campoId => {
                     const input = document.getElementById(campoId);
                     if (input) {
@@ -1860,53 +1125,35 @@ document.addEventListener('DOMContentLoaded', () => {
                         atualizarContador(campoId);
                     }
                 });
-                
-                // Limpa os filtros de números (excluir/incluir)
                 numerosExcluir.clear();
                 numerosIncluir.clear();
-                localStorage.removeItem(STORAGE_KEY_NUMEROS_EXCLUIR);
-                localStorage.removeItem(STORAGE_KEY_NUMEROS_INCLUIR);
-                inicializarFiltrosNumeros();
-                
-                // Oculta resultados e estatísticas
+                containerExcluir.querySelectorAll('.btn-numero-filtro').forEach(btn => btn.classList.remove('ativo'));
+                containerIncluir.querySelectorAll('.btn-numero-filtro').forEach(btn => btn.classList.remove('ativo'));
                 resultadoContainer.classList.add('hidden');
                 estatisticasContainer.classList.add('hidden');
-                errorMessage.classList.add('hidden');
-                
-                // IMPORTANTE: NÃO limpa STORAGE_KEY_CONTADOR e STORAGE_KEY_TIMESTAMP
-                // para manter o controle de gerações e bloqueio funcionando
-                
-                // Atualiza a exibição do limite (para garantir que está correta)
-                atualizarExibicaoLimite();
             }
         });
     }
     
     // Atalhos de teclado
     document.addEventListener('keydown', (e) => {
-        // Enter para gerar (se não estiver em textarea)
         if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && !e.target.closest('.modal')) {
             e.preventDefault();
-            if (podeGerar() && !btnGerar.disabled) {
+            if (!btnGerar.disabled) {
                 form.dispatchEvent(new Event('submit'));
             }
         }
-        // ESC para fechar modais
         if (e.key === 'Escape') {
             document.querySelectorAll('.modal').forEach(modal => {
                 if (!modal.classList.contains('hidden')) {
                     modal.classList.add('hidden');
-                    modal.setAttribute('aria-hidden', 'true');
                 }
             });
         }
     });
     
-    // Atualiza o tempo restante a cada minuto se estiver bloqueado
-    setInterval(() => {
-        atualizarExibicaoLimite();
-    }, 60000); // Atualiza a cada 1 minuto
+    // Atualiza status periodicamente
+    setInterval(async () => {
+        await verificarStatus();
+    }, 60000); // A cada minuto
 });
-
-// Adiciona validação visual em tempo real nos inputs (mantido para compatibilidade, mas atualizarContador já faz isso)
-
