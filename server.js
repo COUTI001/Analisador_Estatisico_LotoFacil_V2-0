@@ -9,6 +9,7 @@ const cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -799,17 +800,58 @@ app.delete('/api/historico', (req, res) => {
     });
 });
 
-// Servir arquivos estáticos (DEPOIS de todas as rotas da API)
-app.use(express.static(path.join(__dirname)));
-
-// Rota catch-all para servir index.html em rotas não-API
-app.get('*', (req, res) => {
-    // Se não for uma rota de API, serve o index.html
-    if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, 'index.html'));
-    } else {
-        res.status(404).json({ erro: 'Rota não encontrada' });
+// Middleware para servir arquivos estáticos ANTES do catch-all
+// Verifica se é um arquivo estático e serve diretamente
+app.use((req, res, next) => {
+    // Se for rota de API, passa para o próximo middleware
+    if (req.path.startsWith('/api')) {
+        return next();
     }
+    
+    // Verifica se é um arquivo estático (tem extensão)
+    const ext = path.extname(req.path);
+    const arquivosEstaticos = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.json', '.pdf', '.woff', '.woff2', '.ttf', '.eot'];
+    
+    if (ext && arquivosEstaticos.includes(ext.toLowerCase())) {
+        // É um arquivo estático - verifica se existe e serve
+        const filePath = path.join(__dirname, req.path);
+        if (fs.existsSync(filePath)) {
+            // Define Content-Type apropriado
+            if (ext === '.css') {
+                res.setHeader('Content-Type', 'text/css; charset=utf-8');
+            } else if (ext === '.js') {
+                res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+            } else if (ext === '.png') {
+                res.setHeader('Content-Type', 'image/png');
+            } else if (ext === '.jpg' || ext === '.jpeg') {
+                res.setHeader('Content-Type', 'image/jpeg');
+            } else if (ext === '.svg') {
+                res.setHeader('Content-Type', 'image/svg+xml');
+            }
+            return res.sendFile(filePath);
+        } else {
+            return res.status(404).send('Arquivo não encontrado');
+        }
+    }
+    
+    // Não é arquivo estático, passa para o próximo middleware
+    next();
+});
+
+// Servir arquivos estáticos usando express.static (fallback)
+app.use(express.static(path.join(__dirname), {
+    index: false
+}));
+
+// Rota catch-all para servir index.html em rotas não-API e não-estáticas
+app.get('*', (req, res) => {
+    // Se for uma rota de API, retorna 404
+    if (req.path.startsWith('/api')) {
+        return res.status(404).json({ erro: 'Rota não encontrada' });
+    }
+    
+    // Para todas as outras rotas, serve o index.html (SPA)
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Exporta o app para Vercel (serverless)
