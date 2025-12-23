@@ -801,13 +801,92 @@ app.delete('/api/historico', (req, res) => {
 });
 
 // Servir arquivos estáticos - DEVE vir ANTES do catch-all
-// Configuração para servir arquivos estáticos no Vercel
-const staticOptions = {
-    index: false,
-    dotfiles: 'ignore',
-    etag: true,
-    lastModified: true
-};
+// No Vercel, precisamos servir os arquivos explicitamente
+
+// Rotas específicas para arquivos estáticos conhecidos (PRIORIDADE - devem vir primeiro)
+// Essas rotas têm prioridade máxima e tentam múltiplos caminhos
+app.get('/styles.css', (req, res) => {
+    res.setHeader('Content-Type', 'text/css; charset=utf-8');
+    const caminhos = [
+        path.join(__dirname, 'styles.css'),
+        path.resolve(__dirname, 'styles.css'),
+        path.join(process.cwd(), 'styles.css')
+    ];
+    // Tenta cada caminho até encontrar um que funcione
+    let tentou = false;
+    for (const caminho of caminhos) {
+        try {
+            if (!tentou && fs.existsSync(caminho)) {
+                tentou = true;
+                return res.sendFile(caminho);
+            }
+        } catch (e) {
+            // Continua tentando
+        }
+    }
+    // Se nenhum caminho funcionou, tenta servir mesmo assim (pode funcionar no Vercel)
+    res.sendFile(path.join(__dirname, 'styles.css'), (err) => {
+        if (err) {
+            console.error('Erro ao servir styles.css:', err.message);
+            res.status(404).send('Arquivo não encontrado');
+        }
+    });
+});
+
+app.get('/script.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    const caminhos = [
+        path.join(__dirname, 'script.js'),
+        path.resolve(__dirname, 'script.js'),
+        path.join(process.cwd(), 'script.js')
+    ];
+    let tentou = false;
+    for (const caminho of caminhos) {
+        try {
+            if (!tentou && fs.existsSync(caminho)) {
+                tentou = true;
+                return res.sendFile(caminho);
+            }
+        } catch (e) {
+            // Continua tentando
+        }
+    }
+    res.sendFile(path.join(__dirname, 'script.js'), (err) => {
+        if (err) {
+            console.error('Erro ao servir script.js:', err.message);
+            res.status(404).send('Arquivo não encontrado');
+        }
+    });
+});
+
+app.get('/Logo_01.png', (req, res) => {
+    res.setHeader('Content-Type', 'image/png');
+    const caminhos = [
+        path.join(__dirname, 'Logo_01.png'),
+        path.resolve(__dirname, 'Logo_01.png'),
+        path.join(process.cwd(), 'Logo_01.png')
+    ];
+    let tentou = false;
+    for (const caminho of caminhos) {
+        try {
+            if (!tentou && fs.existsSync(caminho)) {
+                tentou = true;
+                return res.sendFile(caminho);
+            }
+        } catch (e) {
+            // Continua tentando
+        }
+    }
+    res.sendFile(path.join(__dirname, 'Logo_01.png'), (err) => {
+        if (err) {
+            console.error('Erro ao servir Logo_01.png:', err.message);
+            res.status(404).send('Arquivo não encontrado');
+        }
+    });
+});
+
+// Lista de arquivos estáticos conhecidos
+const arquivosEstaticos = ['styles.css', 'script.js', 'Logo_01.png', 'index.html'];
 
 // Middleware para servir arquivos estáticos explicitamente
 app.use((req, res, next) => {
@@ -818,14 +897,19 @@ app.use((req, res, next) => {
     
     // Verifica se é um arquivo estático
     const ext = path.extname(req.path).toLowerCase();
-    const arquivosEstaticos = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.json', '.pdf', '.woff', '.woff2', '.ttf', '.eot', '.webp'];
+    const extensoesEstaticas = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.json', '.pdf', '.woff', '.woff2', '.ttf', '.eot', '.webp'];
     
-    if (ext && arquivosEstaticos.includes(ext)) {
+    if (ext && extensoesEstaticas.includes(ext)) {
         // Normaliza o caminho - remove barra inicial
         const filePath = req.path.startsWith('/') ? req.path.substring(1) : req.path;
         
-        // Usa path.resolve para garantir caminho absoluto correto
-        const fullPath = path.resolve(__dirname, filePath);
+        // Tenta diferentes caminhos possíveis (para compatibilidade com Vercel)
+        const caminhosPossiveis = [
+            path.resolve(__dirname, filePath),
+            path.join(__dirname, filePath),
+            path.resolve(process.cwd(), filePath),
+            path.join(process.cwd(), filePath)
+        ];
         
         // Define Content-Type apropriado
         const contentTypes = {
@@ -850,14 +934,39 @@ app.use((req, res, next) => {
             res.setHeader('Content-Type', contentTypes[ext]);
         }
         
-        // Tenta servir o arquivo usando caminho absoluto
-        return res.sendFile(fullPath, (err) => {
-            if (err) {
-                console.error(`Erro ao servir arquivo estático ${req.path} (${fullPath}):`, err.message);
-                // Se não conseguir servir, passa para o próximo middleware
-                next();
+        // Tenta servir o arquivo usando o primeiro caminho que existir
+        let tentouServir = false;
+        for (const caminho of caminhosPossiveis) {
+            if (fs.existsSync(caminho)) {
+                tentouServir = true;
+                return res.sendFile(caminho, (err) => {
+                    if (err) {
+                        console.error(`Erro ao servir arquivo ${req.path} de ${caminho}:`, err.message);
+                        // Tenta próximo caminho ou passa adiante
+                        if (caminhosPossiveis.indexOf(caminho) < caminhosPossiveis.length - 1) {
+                            // Ainda há caminhos para tentar, mas vamos passar para o próximo middleware
+                            next();
+                        } else {
+                            next();
+                        }
+                    }
+                });
             }
-        });
+        }
+        
+        // Se nenhum caminho funcionou, tenta servir mesmo assim (pode funcionar no Vercel)
+        if (!tentouServir) {
+            const caminhoPadrao = path.resolve(__dirname, filePath);
+            return res.sendFile(caminhoPadrao, (err) => {
+                if (err) {
+                    console.error(`Erro ao servir arquivo estático ${req.path}:`, err.message);
+                    console.error(`Caminhos tentados:`, caminhosPossiveis);
+                    console.error(`__dirname:`, __dirname);
+                    console.error(`process.cwd():`, process.cwd());
+                    next();
+                }
+            });
+        }
     }
     
     // Não é arquivo estático, passa adiante
@@ -865,7 +974,12 @@ app.use((req, res, next) => {
 });
 
 // Express.static como fallback adicional
-app.use(express.static(path.resolve(__dirname), staticOptions));
+app.use(express.static(path.resolve(__dirname), {
+    index: false,
+    dotfiles: 'ignore',
+    etag: true,
+    lastModified: true
+}));
 
 // Rota catch-all para servir index.html em rotas não-API e não-estáticas
 app.get('*', (req, res) => {
