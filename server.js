@@ -800,48 +800,72 @@ app.delete('/api/historico', (req, res) => {
     });
 });
 
-// Middleware para servir arquivos estáticos ANTES do catch-all
-// Verifica se é um arquivo estático e serve diretamente
+// Servir arquivos estáticos - DEVE vir ANTES do catch-all
+// Configuração para servir arquivos estáticos no Vercel
+const staticOptions = {
+    index: false,
+    dotfiles: 'ignore',
+    etag: true,
+    lastModified: true
+};
+
+// Middleware para servir arquivos estáticos explicitamente
 app.use((req, res, next) => {
-    // Se for rota de API, passa para o próximo middleware
+    // Se for rota de API, passa adiante
     if (req.path.startsWith('/api')) {
         return next();
     }
     
-    // Verifica se é um arquivo estático (tem extensão)
-    const ext = path.extname(req.path);
-    const arquivosEstaticos = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.json', '.pdf', '.woff', '.woff2', '.ttf', '.eot'];
+    // Verifica se é um arquivo estático
+    const ext = path.extname(req.path).toLowerCase();
+    const arquivosEstaticos = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.json', '.pdf', '.woff', '.woff2', '.ttf', '.eot', '.webp'];
     
-    if (ext && arquivosEstaticos.includes(ext.toLowerCase())) {
-        // É um arquivo estático - verifica se existe e serve
-        const filePath = path.join(__dirname, req.path);
-        if (fs.existsSync(filePath)) {
-            // Define Content-Type apropriado
-            if (ext === '.css') {
-                res.setHeader('Content-Type', 'text/css; charset=utf-8');
-            } else if (ext === '.js') {
-                res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-            } else if (ext === '.png') {
-                res.setHeader('Content-Type', 'image/png');
-            } else if (ext === '.jpg' || ext === '.jpeg') {
-                res.setHeader('Content-Type', 'image/jpeg');
-            } else if (ext === '.svg') {
-                res.setHeader('Content-Type', 'image/svg+xml');
-            }
-            return res.sendFile(filePath);
-        } else {
-            return res.status(404).send('Arquivo não encontrado');
+    if (ext && arquivosEstaticos.includes(ext)) {
+        // Normaliza o caminho - remove barra inicial
+        const filePath = req.path.startsWith('/') ? req.path.substring(1) : req.path;
+        
+        // Usa path.resolve para garantir caminho absoluto correto
+        const fullPath = path.resolve(__dirname, filePath);
+        
+        // Define Content-Type apropriado
+        const contentTypes = {
+            '.css': 'text/css; charset=utf-8',
+            '.js': 'application/javascript; charset=utf-8',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon',
+            '.json': 'application/json',
+            '.pdf': 'application/pdf',
+            '.woff': 'font/woff',
+            '.woff2': 'font/woff2',
+            '.ttf': 'font/ttf',
+            '.eot': 'application/vnd.ms-fontobject',
+            '.webp': 'image/webp'
+        };
+        
+        if (contentTypes[ext]) {
+            res.setHeader('Content-Type', contentTypes[ext]);
         }
+        
+        // Tenta servir o arquivo usando caminho absoluto
+        return res.sendFile(fullPath, (err) => {
+            if (err) {
+                console.error(`Erro ao servir arquivo estático ${req.path} (${fullPath}):`, err.message);
+                // Se não conseguir servir, passa para o próximo middleware
+                next();
+            }
+        });
     }
     
-    // Não é arquivo estático, passa para o próximo middleware
+    // Não é arquivo estático, passa adiante
     next();
 });
 
-// Servir arquivos estáticos usando express.static (fallback)
-app.use(express.static(path.join(__dirname), {
-    index: false
-}));
+// Express.static como fallback adicional
+app.use(express.static(path.resolve(__dirname), staticOptions));
 
 // Rota catch-all para servir index.html em rotas não-API e não-estáticas
 app.get('*', (req, res) => {
