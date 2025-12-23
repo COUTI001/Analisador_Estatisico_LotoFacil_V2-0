@@ -803,83 +803,79 @@ app.delete('/api/historico', (req, res) => {
 // Servir arquivos estáticos - DEVE vir ANTES do catch-all
 // No Vercel, precisamos servir os arquivos explicitamente
 
+// Função auxiliar para definir headers de arquivos estáticos
+function setStaticHeaders(res, contentType) {
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+}
+
 // Rotas específicas para arquivos estáticos conhecidos (PRIORIDADE - devem vir primeiro)
 // Essas rotas têm prioridade máxima e tentam múltiplos caminhos
 app.get('/styles.css', (req, res) => {
-    res.setHeader('Content-Type', 'text/css; charset=utf-8');
-    const caminhos = [
-        path.join(__dirname, 'styles.css'),
-        path.resolve(__dirname, 'styles.css'),
-        path.join(process.cwd(), 'styles.css')
-    ];
-    // Tenta cada caminho até encontrar um que funcione
-    let tentou = false;
-    for (const caminho of caminhos) {
-        try {
-            if (!tentou && fs.existsSync(caminho)) {
-                tentou = true;
-                return res.sendFile(caminho);
-            }
-        } catch (e) {
-            // Continua tentando
+    setStaticHeaders(res, 'text/css; charset=utf-8');
+    const caminhoPadrao = path.join(__dirname, 'styles.css');
+    
+    // No Vercel, fs.existsSync pode não funcionar, então tenta servir diretamente
+    // Se existir, usa; se não, tenta mesmo assim (Vercel pode ter o arquivo)
+    try {
+        if (fs.existsSync(caminhoPadrao)) {
+            return res.sendFile(caminhoPadrao);
         }
+    } catch (e) {
+        // Ignora erro de existsSync
     }
-    // Se nenhum caminho funcionou, tenta servir mesmo assim (pode funcionar no Vercel)
-    res.sendFile(path.join(__dirname, 'styles.css'), (err) => {
+    
+    // Tenta servir mesmo assim (funciona no Vercel mesmo sem existsSync)
+    res.sendFile(caminhoPadrao, (err) => {
         if (err) {
             console.error('Erro ao servir styles.css:', err.message);
+            console.error('Caminho tentado:', caminhoPadrao);
+            console.error('__dirname:', __dirname);
             res.status(404).send('Arquivo não encontrado');
         }
     });
 });
 
 app.get('/script.js', (req, res) => {
-    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    const caminhos = [
-        path.join(__dirname, 'script.js'),
-        path.resolve(__dirname, 'script.js'),
-        path.join(process.cwd(), 'script.js')
-    ];
-    let tentou = false;
-    for (const caminho of caminhos) {
-        try {
-            if (!tentou && fs.existsSync(caminho)) {
-                tentou = true;
-                return res.sendFile(caminho);
-            }
-        } catch (e) {
-            // Continua tentando
+    setStaticHeaders(res, 'application/javascript; charset=utf-8');
+    const caminhoPadrao = path.join(__dirname, 'script.js');
+    
+    try {
+        if (fs.existsSync(caminhoPadrao)) {
+            return res.sendFile(caminhoPadrao);
         }
+    } catch (e) {
+        // Ignora erro de existsSync
     }
-    res.sendFile(path.join(__dirname, 'script.js'), (err) => {
+    
+    res.sendFile(caminhoPadrao, (err) => {
         if (err) {
             console.error('Erro ao servir script.js:', err.message);
+            console.error('Caminho tentado:', caminhoPadrao);
             res.status(404).send('Arquivo não encontrado');
         }
     });
 });
 
 app.get('/Logo_01.png', (req, res) => {
-    res.setHeader('Content-Type', 'image/png');
-    const caminhos = [
-        path.join(__dirname, 'Logo_01.png'),
-        path.resolve(__dirname, 'Logo_01.png'),
-        path.join(process.cwd(), 'Logo_01.png')
-    ];
-    let tentou = false;
-    for (const caminho of caminhos) {
-        try {
-            if (!tentou && fs.existsSync(caminho)) {
-                tentou = true;
-                return res.sendFile(caminho);
-            }
-        } catch (e) {
-            // Continua tentando
+    setStaticHeaders(res, 'image/png');
+    const caminhoPadrao = path.join(__dirname, 'Logo_01.png');
+    
+    try {
+        if (fs.existsSync(caminhoPadrao)) {
+            return res.sendFile(caminhoPadrao);
         }
+    } catch (e) {
+        // Ignora erro de existsSync
     }
-    res.sendFile(path.join(__dirname, 'Logo_01.png'), (err) => {
+    
+    res.sendFile(caminhoPadrao, (err) => {
         if (err) {
             console.error('Erro ao servir Logo_01.png:', err.message);
+            console.error('Caminho tentado:', caminhoPadrao);
             res.status(404).send('Arquivo não encontrado');
         }
     });
@@ -911,7 +907,7 @@ app.use((req, res, next) => {
             path.join(process.cwd(), filePath)
         ];
         
-        // Define Content-Type apropriado
+        // Define Content-Type apropriado e headers
         const contentTypes = {
             '.css': 'text/css; charset=utf-8',
             '.js': 'application/javascript; charset=utf-8',
@@ -931,7 +927,7 @@ app.use((req, res, next) => {
         };
         
         if (contentTypes[ext]) {
-            res.setHeader('Content-Type', contentTypes[ext]);
+            setStaticHeaders(res, contentTypes[ext]);
         }
         
         // Tenta servir o arquivo usando o primeiro caminho que existir
@@ -987,6 +983,11 @@ app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ erro: 'Rota não encontrada' });
     }
+    
+    // Define headers para HTML
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     
     // Para todas as outras rotas, serve o index.html (SPA)
     res.sendFile(path.join(__dirname, 'index.html'));
