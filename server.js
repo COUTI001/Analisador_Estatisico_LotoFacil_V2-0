@@ -802,10 +802,26 @@ app.delete('/api/historico', (req, res) => {
 // Servir arquivos estáticos (DEPOIS de todas as rotas da API)
 app.use(express.static(path.join(__dirname)));
 
-// Inicia servidor
-app.listen(PORT, () => {
-    console.log(`Servidor rodando em http://localhost:${PORT}`);
-    console.log('Analisador Estatístico da Loto Fácil - Backend');
-    console.log('Desenvolvido por: André Luiz Coutinho (COUTIINOVATION)');
+// Rota catch-all para servir index.html em rotas não-API
+app.get('*', (req, res) => {
+    // Se não for uma rota de API, serve o index.html
+    if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(__dirname, 'index.html'));
+    } else {
+        res.status(404).json({ erro: 'Rota não encontrada' });
+    }
 });
+
+// Exporta o app para Vercel (serverless)
+// Se estiver rodando localmente, inicia o servidor normalmente
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Servidor rodando em http://localhost:${PORT}`);
+        console.log('Analisador Estatístico da Loto Fácil - Backend');
+        console.log('Desenvolvido por: André Luiz Coutinho (COUTIINOVATION)');
+    });
+}
+
+// Exporta para Vercel
+module.exports = app;
 
