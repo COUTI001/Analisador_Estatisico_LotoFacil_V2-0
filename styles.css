@@ -25,6 +25,21 @@ body {
     padding: 20px;
     color: var(--text-primary);
     line-height: 1.6;
+    font-size: 16px;
+}
+
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+        font-size: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 8px;
+        font-size: 14px;
+    }
 }
 
 .container {
@@ -874,9 +889,9 @@ body.theme-dark .funcionalidades-lista kbd {
 
 /* Tema Claro/Escuro */
 body.theme-dark {
-    --card-bg: rgba(45, 55, 72, 0.95);
-    --text-primary: #f7fafc;
-    --text-secondary: #cbd5e0;
+    --card-bg: rgba(26, 32, 44, 0.98);
+    --text-primary: #ffffff;
+    --text-secondary: #e2e8f0;
     --border-color: #4a5568;
     background: linear-gradient(135deg, #0a5d4a 0%, #1a7a5c 100%);
 }
@@ -1792,9 +1807,21 @@ body.theme-dark .main-content {
 
 body.theme-dark .input,
 body.theme-dark .select-box {
-    background: #2d3748;
-    color: var(--text-primary);
-    border-color: var(--border-color);
+    background: #1a202c;
+    color: #ffffff;
+    border-color: #4a5568;
+}
+
+body.theme-dark .input::placeholder {
+    color: #a0aec0;
+    opacity: 0.8;
+}
+
+body.theme-dark .input:focus,
+body.theme-dark .select-box:focus {
+    border-color: #38ef7d;
+    background: #1a202c;
+    color: #ffffff;
 }
 
 body.theme-dark .teclado-numerico-titulo {
@@ -1884,5 +1911,372 @@ body.theme-dark .codigo-status.codigo-ativo {
     background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
     color: #a7f3d0;
     border-color: #10b981;
+}
+
+/* Ajustes adicionais para modo escuro - melhor contraste */
+body.theme-dark .label {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+body.theme-dark .contador-numeros {
+    background: #065f46;
+    color: #38ef7d;
+    font-weight: 700;
+}
+
+body.theme-dark .contador-numeros.completo {
+    background: #10b981;
+    color: #ffffff;
+}
+
+body.theme-dark .limite-container {
+    color: #ffffff;
+}
+
+body.theme-dark .limite-label {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+body.theme-dark .limite-contador {
+    color: #38ef7d;
+    font-weight: 700;
+}
+
+body.theme-dark .limite-container.limite-bloqueado .limite-contador {
+    color: #fc8181;
+}
+
+body.theme-dark .limite-tempo {
+    color: #fc8181;
+    font-weight: 700;
+}
+
+body.theme-dark .aviso-content {
+    color: #ffffff;
+}
+
+body.theme-dark .aviso-content p {
+    color: #ffffff;
+}
+
+body.theme-dark .aviso-content strong {
+    color: #fca5a5;
+    font-weight: 700;
+}
+
+body.theme-dark .info-text {
+    color: #e2e8f0;
+}
+
+body.theme-dark .estatistica-box-title {
+    color: #ffffff;
+}
+
+body.theme-dark .estatistica-linha {
+    background: #2d3748;
+    color: #ffffff;
+}
+
+body.theme-dark .estatistica-numero {
+    color: #ffffff;
+}
+
+body.theme-dark .estatistica-frequencia {
+    color: #ffffff;
+}
+
+body.theme-dark .grafico-title {
+    color: #ffffff;
+}
+
+body.theme-dark .analises-title {
+    color: #ffffff;
+}
+
+body.theme-dark .analise-box h4 {
+    color: #ffffff;
+}
+
+body.theme-dark .dist-item,
+body.theme-dark .par-impar-item,
+body.theme-dark .seq-item {
+    color: #e2e8f0;
+}
+
+body.theme-dark .modal-header h2 {
+    color: #ffffff;
+}
+
+body.theme-dark .historico-header {
+    color: #ffffff;
+}
+
+body.theme-dark .historico-jogo-title {
+    color: #ffffff;
+}
+
+body.theme-dark .dashboard-card h3 {
+    color: #ffffff;
+}
+
+body.theme-dark .dashboard-info {
+    color: #cbd5e0;
+}
+
+body.theme-dark .footer {
+    color: #ffffff;
+    opacity: 0.9;
+}
+
+body.theme-dark .btn-footer {
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+body.theme-dark .btn-footer:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Responsividade Mobile - Melhorias */
+@media (max-width: 768px) {
+    .main-content {
+        padding: 20px 15px;
+        overflow-x: hidden;
+    }
+    
+    .instrucoes-container {
+        padding: 20px 15px;
+        margin-top: 30px;
+    }
+    
+    .instrucoes-lista li {
+        padding: 12px 15px 12px 55px;
+        font-size: 0.95rem;
+    }
+    
+    .instrucoes-lista li::before {
+        width: 28px;
+        height: 28px;
+        font-size: 0.85rem;
+    }
+    
+    .aviso-container {
+        padding: 20px 15px;
+    }
+    
+    .resultado-container,
+    .estatisticas-container {
+        padding: 20px 15px;
+        margin-top: 30px;
+    }
+    
+    .form {
+        gap: 20px;
+    }
+    
+    .form-group {
+        gap: 8px;
+    }
+    
+    .label-row {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .contador-numeros {
+        font-size: 0.85rem;
+        padding: 4px 10px;
+    }
+    
+    .label {
+        font-size: 0.95rem;
+    }
+    
+    .input,
+    .select-box {
+        padding: 12px 15px;
+        font-size: 0.95rem;
+    }
+    
+    .btn-gerar {
+        padding: 15px 30px;
+        font-size: 1.1rem;
+    }
+    
+    .resultado-header-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    
+    .resultado-title {
+        font-size: 1.5rem;
+    }
+    
+    .resultado-buttons {
+        width: 100%;
+        justify-content: stretch;
+    }
+    
+    .btn-acao {
+        flex: 1;
+        padding: 12px 15px;
+        font-size: 0.9rem;
+    }
+    
+    .estatisticas-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .estatistica-box {
+        padding: 20px;
+    }
+    
+    .grafico-frequencia-container {
+        padding: 20px 15px;
+    }
+    
+    .analises-avancadas {
+        padding: 20px 15px;
+    }
+    
+    .analises-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    .main-content {
+        padding: 15px 10px;
+    }
+    
+    .instrucoes-container {
+        padding: 15px 10px;
+    }
+    
+    .instrucoes-title {
+        font-size: 1.2rem;
+    }
+    
+    .instrucoes-lista li {
+        padding: 10px 12px 10px 50px;
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+    }
+    
+    .instrucoes-lista li::before {
+        width: 26px;
+        height: 26px;
+        font-size: 0.8rem;
+        left: 12px;
+    }
+    
+    .aviso-container {
+        padding: 15px 10px;
+    }
+    
+    .aviso-title {
+        font-size: 1.1rem;
+    }
+    
+    .aviso-content {
+        font-size: 0.9rem;
+    }
+    
+    .resultado-container,
+    .estatisticas-container {
+        padding: 15px 10px;
+    }
+    
+    .resultado-title {
+        font-size: 1.3rem;
+    }
+    
+    .estatisticas-title {
+        font-size: 1.5rem;
+    }
+    
+    .estatistica-box-title {
+        font-size: 1.1rem;
+    }
+    
+    .grafico-title {
+        font-size: 1.1rem;
+    }
+    
+    .analises-title {
+        font-size: 1.1rem;
+    }
+    
+    .label {
+        font-size: 0.9rem;
+    }
+    
+    .input,
+    .select-box {
+        padding: 10px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .btn-gerar {
+        padding: 14px 25px;
+        font-size: 1rem;
+    }
+    
+    .codigo-ativacao-container {
+        padding: 12px 10px;
+    }
+    
+    .limite-container {
+        padding: 12px 10px;
+    }
+    
+    .limite-text {
+        font-size: 0.85rem;
+    }
+    
+    .numeros-grid {
+        gap: 8px;
+    }
+    
+    .numero-bola {
+        font-size: 1.1rem;
+    }
+    
+    .modal-content {
+        width: 98%;
+        max-height: 98vh;
+        margin: 1vh;
+    }
+    
+    .modal-header {
+        padding: 15px;
+    }
+    
+    .modal-header h2 {
+        font-size: 1.2rem;
+    }
+    
+    .modal-body {
+        padding: 15px;
+    }
+    
+    .footer {
+        font-size: 0.85rem;
+    }
+    
+    .footer-content {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .btn-footer {
+        padding: 8px 12px;
+        font-size: 0.85rem;
+    }
 }
 
