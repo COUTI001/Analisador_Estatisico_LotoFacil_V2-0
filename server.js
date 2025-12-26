@@ -127,18 +127,85 @@ const CODIGOS_VALIDOS = {
     '*#COABITACAO005': CODIGO_ILIMITADO
 };
 
-// Função para obter ou criar ID de usuário
-function getUserId(req) {
-    if (!req.session.userId) {
-        req.session.userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substring(7);
-        usuarios.set(req.session.userId, {
-            contador: 0,
-            timestamp: null,
-            codigoAtivo: null,
-            codigoExpiracao: null
-        });
+// Função para obter ou criar ID de usuário (persistente via cookie)
+function getUserId(req, res) {
+    let userId = null;
+    
+    // PRIMEIRO: Tenta obter do cookie persistente (sobrevive ao fechamento do navegador)
+    if (req.cookies && req.cookies.userIdPersistente) {
+        userId = req.cookies.userIdPersistente;
+        console.log(`[USERID] Recuperado do cookie persistente: ${userId}`);
     }
-    return req.session.userId;
+    
+    // SEGUNDO: Se não tem cookie, tenta da sessão
+    if (!userId && req.session && req.session.userId) {
+        userId = req.session.userId;
+        console.log(`[USERID] Recuperado da sessão: ${userId}`);
+        
+        // Salva na sessão também para compatibilidade
+        req.session.userId = userId;
+    }
+    
+    // TERCEIRO: Se não tem nem cookie nem sessão, cria um novo
+    if (!userId) {
+        userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substring(7);
+        console.log(`[USERID] Criado novo userId: ${userId}`);
+        
+        // Salva na sessão
+        if (req.session) {
+            req.session.userId = userId;
+        }
+        
+        // Salva em cookie persistente (expira em 1 ano)
+        if (res) {
+            res.cookie('userIdPersistente', userId, {
+                maxAge: 365 * 24 * 60 * 60 * 1000, // 1 ano
+                httpOnly: false, // Permite acesso via JavaScript se necessário
+                secure: process.env.NODE_ENV === 'production', // HTTPS em produção
+                sameSite: 'lax'
+            });
+            console.log(`[USERID] Cookie persistente criado para: ${userId}`);
+        }
+        
+        // Cria entrada no Map de usuários se não existir
+        if (!usuarios.has(userId)) {
+            usuarios.set(userId, {
+                contador: 0,
+                timestamp: null,
+                codigoAtivo: null,
+                codigoExpiracao: null
+            });
+            console.log(`[USERID] Nova entrada criada no Map para: ${userId}`);
+        }
+    } else {
+        // Se userId existe (do cookie ou sessão), garante que está no Map
+        if (!usuarios.has(userId)) {
+            usuarios.set(userId, {
+                contador: 0,
+                timestamp: null,
+                codigoAtivo: null,
+                codigoExpiracao: null
+            });
+            console.log(`[USERID] Entrada recriada no Map para: ${userId}`);
+        }
+        
+        // Sincroniza sessão com cookie
+        if (req.session) {
+            req.session.userId = userId;
+        }
+        
+        // Garante que o cookie está definido (renova expiração)
+        if (res) {
+            res.cookie('userIdPersistente', userId, {
+                maxAge: 365 * 24 * 60 * 60 * 1000, // 1 ano
+                httpOnly: false,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax'
+            });
+        }
+    }
+    
+    return userId;
 }
 
 // Função para verificar modo anônimo (mais rigorosa)
@@ -504,7 +571,7 @@ app.get('/api/status', (req, res) => {
     }
     
     // Só cria userId se passou na verificação de modo anônimo
-    const userId = getUserId(req);
+    const userId = getUserId(req, res);
     const user = usuarios.get(userId);
     
     if (!user) {
@@ -547,7 +614,7 @@ app.post('/api/gerar', (req, res) => {
     }
     
     // Só cria userId se passou na verificação de modo anônimo
-    const userId = getUserId(req);
+    const userId = getUserId(req, res);
     console.log('[USUÁRIO] UserId:', userId);
     
     // Verifica se o usuário existe (deve existir após getUserId)
@@ -710,7 +777,7 @@ app.post('/api/ativar-codigo', (req, res) => {
         });
     }
     
-    const userId = getUserId(req);
+    const userId = getUserId(req, res);
     const { codigo } = req.body;
     
     if (!codigo || codigo.trim() === '') {
@@ -772,7 +839,7 @@ app.get('/api/historico', (req, res) => {
         });
     }
     
-    const userId = getUserId(req);
+    const userId = getUserId(req, res);
     const historicoUser = historico.get(userId) || [];
     
     res.json({
@@ -791,7 +858,7 @@ app.delete('/api/historico', (req, res) => {
         });
     }
     
-    const userId = getUserId(req);
+    const userId = getUserId(req, res);
     historico.delete(userId);
     
     res.json({
