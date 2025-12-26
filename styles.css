@@ -2073,9 +2073,58 @@ body.theme-dark .btn-footer:hover {
         margin-top: 30px;
     }
     
+    .instrucoes-title {
+        color: #000000 !important;
+    }
+    
     .instrucoes-lista li {
         padding: 12px 15px 12px 55px;
         font-size: 0.95rem;
+        color: #000000 !important;
+    }
+    
+    .instrucoes-lista li strong {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-algoritmo p {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-algoritmo strong {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-funcionalidades h4 {
+        color: #000000 !important;
+    }
+    
+    .funcionalidades-lista li {
+        color: #000000 !important;
+    }
+    
+    .funcionalidades-lista strong {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-limite p {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-limite strong {
+        color: #000000 !important;
+    }
+    
+    .aviso-content {
+        color: #000000 !important;
+    }
+    
+    .aviso-content p {
+        color: #000000 !important;
+    }
+    
+    .aviso-content strong {
+        color: #000000 !important;
     }
     
     .instrucoes-lista li::before {
@@ -2182,12 +2231,14 @@ body.theme-dark .btn-footer:hover {
     
     .instrucoes-title {
         font-size: 1.2rem;
+        color: #000000 !important;
     }
     
     .instrucoes-lista li {
         padding: 10px 12px 10px 50px;
         font-size: 0.9rem;
         margin-bottom: 10px;
+        color: #000000 !important;
     }
     
     .instrucoes-lista li::before {
@@ -2195,6 +2246,38 @@ body.theme-dark .btn-footer:hover {
         height: 26px;
         font-size: 0.8rem;
         left: 12px;
+    }
+    
+    .instrucoes-lista li strong {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-algoritmo p {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-algoritmo strong {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-funcionalidades h4 {
+        color: #000000 !important;
+    }
+    
+    .funcionalidades-lista li {
+        color: #000000 !important;
+    }
+    
+    .funcionalidades-lista strong {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-limite p {
+        color: #000000 !important;
+    }
+    
+    .instrucoes-limite strong {
+        color: #000000 !important;
     }
     
     .aviso-container {
@@ -2207,6 +2290,15 @@ body.theme-dark .btn-footer:hover {
     
     .aviso-content {
         font-size: 0.9rem;
+        color: #000000 !important;
+    }
+    
+    .aviso-content p {
+        color: #000000 !important;
+    }
+    
+    .aviso-content strong {
+        color: #000000 !important;
     }
     
     .resultado-container,
