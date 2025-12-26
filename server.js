@@ -223,18 +223,18 @@ function podeGerar(userId, quantidade = 1) {
     const vinteQuatroHoras = 24 * 60 * 60 * 1000;
     
     // Verifica se passou 24 horas desde o primeiro uso do dia
+    // Se passou, considera contador como 0 para a verificação (reset será feito no incrementarContador)
+    let contadorParaVerificacao = user.contador;
     if (!user.timestamp || (agora - user.timestamp) >= vinteQuatroHoras) {
-        // Reset do dia - pode gerar até MAX_GERACOES_POR_DIA
-        const podeGerarQuantidade = quantidade <= MAX_GERACOES_POR_DIA;
-        console.log(`[LIMITE] Novo dia ou primeiro uso - pode gerar ${quantidade}? ${podeGerarQuantidade}`);
-        return podeGerarQuantidade;
+        contadorParaVerificacao = 0; // Novo dia = contador zerado
+        console.log(`[LIMITE] Novo dia detectado para ${userId} - Contador será resetado`);
     }
     
-    // Mesmo dia - verifica se não ultrapassa o limite
-    const totalAposGeracao = user.contador + quantidade;
+    // SEMPRE verifica se não ultrapassa o limite (considerando contador atual ou resetado)
+    const totalAposGeracao = contadorParaVerificacao + quantidade;
     const podeGerar = totalAposGeracao <= MAX_GERACOES_POR_DIA;
     
-    console.log(`[LIMITE] Usuário ${userId} - Contador atual: ${user.contador}, Tentando gerar: ${quantidade}, Total após: ${totalAposGeracao}, Pode gerar: ${podeGerar}`);
+    console.log(`[LIMITE] Usuário ${userId} - Contador atual: ${user.contador}, Contador para verificação: ${contadorParaVerificacao}, Tentando gerar: ${quantidade}, Total após: ${totalAposGeracao}, Pode gerar: ${podeGerar}`);
     
     return podeGerar;
 }
